@@ -97,6 +97,16 @@
   </head>
   <body>
     <h3>Scriptable Copy</h3>
+    <button id="copyButton">Copy to Clipboard</button>
+    <div class="group" id="previewGroup">
+      preview
+      <div id="preview"></div>
+      <div class="flex-end">
+        <div class="message" id="copiedMessage">Copied</div>
+        <button id="updatePreviewButton">Update Preview</button>
+      </div>
+    </div>
+
     <div id="customSetting">
       custom setting
     </div>
@@ -107,7 +117,7 @@
         <input type="checkbox" id="urlPatterFilterEnabledCheckBox" value="urlPatternFilterEnabled" />
         <label for="urlPatternFilterEnabled">URL Pattern Filter</label>
       </div>
-      <select id="settingSelector", size="3">
+      <select id="settingSelector" size="5">
       </select>
       <div class="flex-end">
         <button id="addSettingButton">+</button>
@@ -119,16 +129,6 @@
       <div class="flex-end">
         <div class="message" id="savedMessage">Saved</div>
         <button id="saveSettingButton">Save Settings</button>
-      </div>
-    </div>
-
-    <div class="group" id="previewGroup">
-      preview
-      <div id="preview"></div>
-      <div class="flex-end">
-        <div class="message" id="copiedMessage">Copied</div>
-        <button id="updatePreviewButton">Update Preview</button>
-        <button id="copyButton">Copy to Clipboard</button>
       </div>
     </div>
 

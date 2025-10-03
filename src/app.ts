@@ -1,5 +1,6 @@
 import { Setting } from './setting.ts';
 import { MessageRequest, GetTextRequest, GetUrlRequest, MessageResponse } from './message.ts';
+//import { storage } from "npm:@extend-chrome/storage";
 
 const DefaultSetting = new Setting(
   'defaultSetting',
@@ -133,25 +134,38 @@ class View {
   }
 }
 
+type Dictionary<KT, VT> = { [key: KT]: VT };
+
 class StorageCache {
   settings: Setting[];
+  lastSelectedSettingIdDict: Dictionary<string, string>;
 
-  constructor(settings: Setting[]) {
+  constructor(settings: Setting[],  lastSelectedSettingIdDict: Dictionary<string, string>) {
     this.settings = settings;
+    this.lastSelectedSettingIdDict = lastSelectedSettingIdDict;
   }
 }
 
 class Model {
   settings: Setting[];
   currentSetting: Setting;
+  storageCache: StorageCache;
 
   constructor() {
     this.settings = [];
     this.currentSetting = DefaultSetting;
+    this.storageCache = new StorageCache([], {});
   }
 
   async initialize() {
-    await this.loadSettings();
+    this.storageCache = await this.loadStorageCacheFromChromeStorage();
+    if (this.storageCache === undefined) {
+      this.storageCache = new StorageCache([], {});
+      await chrome.storage.sync.set(this.storageCache);
+    }
+    this.settings = this.storageCache.settings;
+    this.currentSetting = this.settings.find((setting) => !isPresetSetting(setting.id)) ?? DefaultSetting;
+    //await this.loadSettings();
   }
 
   async loadSettings() {
@@ -206,6 +220,26 @@ class Model {
     else {
       return settings;
     }
+  }
+
+  async loadLastSelectedSettingIdFromChromeStorage(url: string) {
+    const domain = new URL(url).hostname;
+    const storageCache = await this.loadStorageCacheFromChromeStorage();
+    if (storageCache === undefined) {
+      return null;
+    }
+    const lastSelectedSettingId = storageCache.lastSelectedSettingIdDict[domain];
+    return lastSelectedSettingId;
+  }
+
+  async saveLastSelectedSettingIdToChromeStorage(url: string, settingId: string) {
+    const domain = new URL(url).hostname;
+    const storageCache = await this.loadStorageCacheFromChromeStorage();
+    if (storageCache === undefined) {
+      return;
+    }
+    storageCache.lastSelectedSettingIdDict[domain] = settingId;
+    await chrome.storage.sync.set(storageCache);
   }
 
   async saveCurrentSettingToChromeStorage() {
