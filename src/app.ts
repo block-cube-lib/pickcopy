@@ -166,7 +166,7 @@ class Model {
       this.storageCache = new StorageCache([], {});
       await chrome.storage.sync.set(this.storageCache);
     }
-    // ストレージから読み込んだプレーンなオブジェクトをSettingクラスのインスタンスに変換する
+    // Convert plain objects loaded from storage into Setting class instances.
     const savedSettings = this.storageCache.settings ?? [];
     this.settings = savedSettings.map((s: Setting) =>
       new Setting(s.id, s.name, s.urlPattern, s.selectors, s.format)
@@ -178,7 +178,6 @@ class Model {
       MarkdownSetting,
     );
     this.currentSetting = this.settings.find((setting) => !isPresetSetting(setting.id)) ?? DefaultSetting;
-    //await this.loadSettings();
   }
 
   async loadSettings() {
@@ -259,15 +258,15 @@ class Model {
       return;
     }
 
-    // 既存の設定を探す
+    // Find the existing setting.
     const settingIndex = storageCache.settings.findIndex(s => s.id === this.currentSetting.id);
 
     if (settingIndex > -1) {
-      // 既存の設定を更新
+      // Update the existing setting.
       storageCache.settings[settingIndex] = this.currentSetting;
       debugLog(`overwrite setting: ${JSON.stringify(this.currentSetting, null, 2)}`);
     } else {
-      // 新しい設定を追加
+      // Add a new setting.
       storageCache.settings.push(this.currentSetting);
       debugLog(`save new setting: ${JSON.stringify(this.currentSetting, null, 2)}`);
     }
@@ -294,13 +293,13 @@ class App {
 
     const lastSelectedId = await this.model.loadLastSelectedSettingIdFromChromeStorage(this.model.currentUrl);
     if (lastSelectedId) {
-      // 見つかった設定が存在するか確認
+      // Check if the found setting exists.
       const foundSetting = this.model.settings.find(s => s.id === lastSelectedId);
       if (foundSetting) {
         this.model.selectSetting(lastSelectedId);
       }
     } else {
-      // ドメインに紐づく設定がない場合はDefaultSettingを選択する
+      // If no setting is associated with the domain, select DefaultSetting.
       this.model.selectSetting(DefaultSetting.id);
     }
 
@@ -423,7 +422,7 @@ class App {
 
   async copyToClipboard() {
     const text = await this.getText();
-    // プレビューにも反映
+    // Also reflect in the preview.
     this.view.preview.value = text;
     navigator.clipboard.writeText(text).then(() => {
       this.view.showCopiedMessage();

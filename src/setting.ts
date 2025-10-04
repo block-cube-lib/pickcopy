@@ -23,13 +23,13 @@ class Setting {
       return false;
     }
 
-    // 正規表現の特殊文字をエスケープする
+    // Escape special characters for regular expression.
     const escapeRegExp = (str: string) => {
-      // $&はマッチした部分文字列全体を意味します
+      // $& means the entire matched substring.
       return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
 
-    // `*` を `.*` に置換する前に、他の特殊文字をエスケープする
+    // Escape other special characters before replacing '*' with '.*'.
     const regexPattern = this.urlPattern.split('*').map(escapeRegExp).join('.*');
     return new RegExp(regexPattern).test(url);
   }
