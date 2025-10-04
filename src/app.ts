@@ -75,6 +75,8 @@ class View {
     this.selectorsInput = document.getElementById(
       'selectors',
     ) as HTMLTextAreaElement;
+    this.selectorsInput.style.whiteSpace = 'nowrap';
+    this.selectorsInput.style.overflowX = 'auto';
     this.urlPatternInput = document.getElementById(
       'urlPattern',
     ) as HTMLInputElement;
@@ -102,20 +104,15 @@ class View {
 
   updateSettingValue(setting: Setting) {
     this.settingNameInput.value = setting.name;
-    this.selectorsInput.innerText = setting.selectors.join('\n');
-    this.formatInput.innerText = setting.format;
+    this.urlPatternInput.value = setting.urlPattern;
+    this.selectorsInput.value = setting.selectors.join('\n');
+    this.formatInput.value = setting.format;
 
     const isPreset = isPresetSetting(setting.id);
-    this.customSettingView.style.display = isPreset
-      ? 'none'
-      : 'block';
+    this.customSettingView.style.display = isPreset ? 'none' : 'block';
     this.selectorsInput.readOnly = isPreset;
     this.formatInput.readOnly = isPreset;
     this.urlPatternInput.readOnly = isPreset;
-    this.selectorsInput.innerText = setting.selectors
-      .join('\n');
-    this.formatInput.innerText = setting.format;
-    this.urlPatternInput.value = setting.urlPattern;
 
     this.settingNameInput.style.display = isPreset
       ? 'none'
@@ -366,7 +363,7 @@ class App {
 
   async copyToClipboard() {
     const text = await this.getText();
-    this.view.preview.innerText = text;
+    this.view.preview.value = text;
     await navigator.clipboard.writeText(text);
     navigator.clipboard.writeText(text).then(() => {
       this.view.showCopiedMessage();
@@ -393,8 +390,12 @@ class App {
 
   async updatePreview() {
     const text = await this.getText();
-    this.view.preview.innerText = text;
+    this.view.preview.value = text;
     debugLog(`Preview updated: ${text}`);
+    requestAnimationFrame(() => {
+      this.view.preview.value = text;
+      debugLog(`Preview updated in rAF: ${text}`);
+    });
   }
 
   async getText() {
