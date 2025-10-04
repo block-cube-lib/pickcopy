@@ -41,6 +41,7 @@ class View {
   readonly settingSelector: HTMLSelectElement;
   readonly addSettingButton: HTMLButtonElement;
   readonly copyButton: HTMLButtonElement;
+  readonly urlPatterFilterEnabledCheckBox: HTMLInputElement;
   readonly settingNameInput: HTMLInputElement;
   readonly saveSettingButton: HTMLButtonElement;
   readonly selectorsInput: HTMLTextAreaElement;
@@ -65,6 +66,9 @@ class View {
     this.addSettingButton = document.getElementById(
       'addSettingButton',
     ) as HTMLButtonElement;
+    this.urlPatterFilterEnabledCheckBox = document.getElementById(
+      'urlPatterFilterEnabledCheckBox',
+    ) as HTMLInputElement;
     this.copyButton = document.getElementById(
       'copyButton',
     ) as HTMLButtonElement;
@@ -146,11 +150,13 @@ class StorageCache {
 class Model {
   settings: Setting[];
   currentSetting: Setting;
+  currentUrl: string;
   storageCache: StorageCache;
 
   constructor() {
     this.settings = [];
     this.currentSetting = DefaultSetting;
+    this.currentUrl = '';
     this.storageCache = new StorageCache([], {});
   }
 
@@ -160,7 +166,17 @@ class Model {
       this.storageCache = new StorageCache([], {});
       await chrome.storage.sync.set(this.storageCache);
     }
-    this.settings = this.storageCache.settings;
+    // ストレージから読み込んだプレーンなオブジェクトをSettingクラスのインスタンスに変換する
+    const savedSettings = this.storageCache.settings ?? [];
+    this.settings = savedSettings.map((s: Setting) =>
+      new Setting(s.id, s.name, s.urlPattern, s.selectors, s.format)
+    );
+
+    this.settings.unshift(
+      DefaultSetting,
+      TitleAndURLSetting,
+      MarkdownSetting,
+    );
     this.currentSetting = this.settings.find((setting) => !isPresetSetting(setting.id)) ?? DefaultSetting;
     //await this.loadSettings();
   }
@@ -169,11 +185,6 @@ class Model {
     this.settings = await this.loadSettingsFromChromeStorage(null);
     this.currentSetting = this.settings.find((setting) => !isPresetSetting(setting.id)) ?? DefaultSetting;
     debugLog(`Loaded settings: ${JSON.stringify(this.settings, null, 2)}`);
-    this.settings.unshift(
-      DefaultSetting,
-      TitleAndURLSetting,
-      MarkdownSetting,
-    );
   }
 
   selectSetting(id: string) {
@@ -266,6 +277,10 @@ class App {
   async initialize() {
     await this.model.initialize();
 
+    const urlResponse = await this.sendMessageToTab<string>(new GetUrlRequest());
+    this.model.currentUrl = urlResponse?.content ?? '';
+    debugLog(`Current URL: ${this.model.currentUrl}`);
+
     this.view.updatePreviewButton.addEventListener(
       'click',
       () => this.updatePreview(),
@@ -286,21 +301,22 @@ class App {
       'click',
       async () => {
         const setting = Setting.createNew();
-        const request = new GetUrlRequest();
-        const response = await this.sendMessageToTab<string>(request);
-        setting.urlPattern = response?.content ?? '';
+        setting.urlPattern = this.model.currentUrl;
         this.model.addSetting(setting);
-        const option = this.addSettingSelector(setting.id, setting.name);
-        option.selected = true;
         this.model.currentSetting = setting;
+        await this.updateSettingSelector();
         this.view.updateSettingValue(setting);
       },
     );
 
-    for (const setting of this.model.settings) {
-      const option = this.addSettingSelector(setting.id, setting.name);
-      option.selected = setting.id === this.model.currentSetting.id;
-    }
+    this.view.urlPatterFilterEnabledCheckBox.addEventListener(
+      'change',
+      () => {
+        this.updateSettingSelector();
+      },
+    );
+
+    await this.updateSettingSelector();
 
     this.view.copyButton.addEventListener(
       'click',
@@ -337,6 +353,26 @@ class App {
     this.onSelectedSettingChanged(this.model.currentSetting.id);
 
     debugLog("App initialized");
+  }
+
+  async updateSettingSelector() {
+    this.view.settingSelector.innerHTML = '';
+
+    const isFilterEnabled = this.view.urlPatterFilterEnabledCheckBox.checked;
+    let filteredSettings = this.model.settings;
+
+    if (isFilterEnabled) {
+      filteredSettings = this.model.settings.filter(
+        (s) => isPresetSetting(s.id) || s.isUrlMatched(this.model.currentUrl),
+      );
+    }
+
+    for (const setting of filteredSettings) {
+      const option = this.addSettingSelector(setting.id, setting.name);
+      option.selected = setting.id === this.model.currentSetting.id;
+    }
+
+    this.view.settingSelector.value = this.model.currentSetting.id;
   }
 
   addSettingSelector(id: string, name: string): HTMLOptionElement {
