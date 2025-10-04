@@ -236,7 +236,7 @@ class Model {
     if (storageCache === undefined) {
       return null;
     }
-    const lastSelectedSettingId = storageCache.lastSelectedSettingIdDict[domain];
+    const lastSelectedSettingId = storageCache.lastSelectedSettingIdDict?.[domain];
     return lastSelectedSettingId;
   }
 
@@ -246,21 +246,32 @@ class Model {
     if (storageCache === undefined) {
       return;
     }
+    if (!storageCache.lastSelectedSettingIdDict) {
+      storageCache.lastSelectedSettingIdDict = {};
+    }
     storageCache.lastSelectedSettingIdDict[domain] = settingId;
     await chrome.storage.sync.set(storageCache);
   }
 
   async saveCurrentSettingToChromeStorage() {
-    let settings = (await this.loadSettingsFromChromeStorage(null)) as Setting[];
-    debugLog(`before save All Settings: ${JSON.stringify(settings, null, 2)}`);
-    if (settings.find((s) => s.id === this.currentSetting.id)) {
-      settings = settings.map((s) => s.id === this.currentSetting.id ? this.currentSetting : s);
+    const storageCache = await this.loadStorageCacheFromChromeStorage();
+    if (storageCache === undefined) {
+      return;
+    }
+
+    // 既存の設定を探す
+    const settingIndex = storageCache.settings.findIndex(s => s.id === this.currentSetting.id);
+
+    if (settingIndex > -1) {
+      // 既存の設定を更新
+      storageCache.settings[settingIndex] = this.currentSetting;
       debugLog(`overwrite setting: ${JSON.stringify(this.currentSetting, null, 2)}`);
     } else {
-      settings.push(this.currentSetting);
+      // 新しい設定を追加
+      storageCache.settings.push(this.currentSetting);
       debugLog(`save new setting: ${JSON.stringify(this.currentSetting, null, 2)}`);
     }
-    const storageCache = new StorageCache(settings);
+
     await chrome.storage.sync.set(storageCache);
   }
 }
@@ -280,6 +291,18 @@ class App {
     const urlResponse = await this.sendMessageToTab<string>(new GetUrlRequest());
     this.model.currentUrl = urlResponse?.content ?? '';
     debugLog(`Current URL: ${this.model.currentUrl}`);
+
+    const lastSelectedId = await this.model.loadLastSelectedSettingIdFromChromeStorage(this.model.currentUrl);
+    if (lastSelectedId) {
+      // 見つかった設定が存在するか確認
+      const foundSetting = this.model.settings.find(s => s.id === lastSelectedId);
+      if (foundSetting) {
+        this.model.selectSetting(lastSelectedId);
+      }
+    } else {
+      // ドメインに紐づく設定がない場合はDefaultSettingを選択する
+      this.model.selectSetting(DefaultSetting.id);
+    }
 
     this.view.updatePreviewButton.addEventListener(
       'click',
@@ -390,17 +413,18 @@ class App {
     return option;
   }
 
-  onSelectedSettingChanged(id: string) {
+  async onSelectedSettingChanged(id: string) {
     this.model.selectSetting(id);
     debugLog(`Selected setting: ${id} -> ${JSON.stringify(this.model.currentSetting, null, 2)}`);
     this.view.updateSettingValue(this.model.currentSetting);
-    this.updatePreview();
+    await this.updatePreview();
+    await this.model.saveLastSelectedSettingIdToChromeStorage(this.model.currentUrl, id);
   }
 
   async copyToClipboard() {
     const text = await this.getText();
+    // プレビューにも反映
     this.view.preview.value = text;
-    await navigator.clipboard.writeText(text);
     navigator.clipboard.writeText(text).then(() => {
       this.view.showCopiedMessage();
     });
