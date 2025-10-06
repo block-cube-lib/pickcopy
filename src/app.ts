@@ -52,7 +52,7 @@ class View {
 
   constructor() {
     this.customSettingView = document.getElementById(
-      'customSetting',
+      'customSettingView',
     )!;
     this.preview = document.getElementById(
       'preview',
@@ -113,10 +113,6 @@ class View {
     this.formatInput.value = setting.format;
 
     const isPreset = isPresetSetting(setting.id);
-    this.customSettingView.style.display = isPreset ? 'none' : 'block';
-    this.selectorsInput.readOnly = isPreset;
-    this.formatInput.readOnly = isPreset;
-    this.urlPatternInput.readOnly = isPreset;
 
     this.settingNameInput.style.display = isPreset
       ? 'none'
@@ -127,6 +123,10 @@ class View {
     this.updatePreviewButton.style.display = isPreset
       ? 'none'
       : 'block';
+    
+    this.selectorsInput.readOnly = isPreset;
+    this.formatInput.readOnly = isPreset;
+    this.urlPatternInput.readOnly = isPreset;
 
     const selectOption = document.getElementById(setting.id) as HTMLOptionElement;
     if (selectOption) {
@@ -230,6 +230,11 @@ class Model {
   }
 
   async loadLastSelectedSettingIdFromChromeStorage(url: string) {
+    // Return null if the URL is empty or not a valid HTTP/HTTPS URL.
+    if (!url || !url.startsWith('http')) {
+      return null;
+    }
+
     const domain = new URL(url).hostname;
     const storageCache = await this.loadStorageCacheFromChromeStorage();
     if (storageCache === undefined) {
@@ -240,6 +245,11 @@ class Model {
   }
 
   async saveLastSelectedSettingIdToChromeStorage(url: string, settingId: string) {
+    // Do not save if the URL is empty or not a valid HTTP/HTTPS URL.
+    if (!url || !url.startsWith('http')) {
+      return;
+    }
+
     const domain = new URL(url).hostname;
     const storageCache = await this.loadStorageCacheFromChromeStorage();
     if (storageCache === undefined) {

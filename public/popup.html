@@ -30,7 +30,7 @@
       background-color: #f9f9f9;
     }
 
-    textarea, input {
+    textarea, input:not([type="checkbox"]) {
       width: 100%;
       margin-bottom: 10px;
       padding: 8px;
@@ -99,12 +99,9 @@
       </div>
     </div>
 
-    <div id="customSetting">
-      custom setting
-    </div>
+    <div class="section-title">Setting Selector</div>
 
     <div class="group">
-      Setting Selector
       <div>
         <input type="checkbox" id="urlPatterFilterEnabledCheckBox" value="urlPatternFilterEnabled" />
         <label for="urlPatternFilterEnabled">URL Pattern Filter</label>
@@ -114,13 +111,15 @@
       <div class="flex-end">
         <button id="addSettingButton">+</button>
       </div>
-      <input id="settingName" placeholder="Enter name for the setting"/>
-      <textarea id="selectors" placeholder="Enter selectors, one per line"></textarea>
-      <textarea id="format" placeholder="Enter format string (e.g., 'Title: {Title}, URL: {URL}')"></textarea>
-      <input id="urlPattern" placeholder="URL Pattern"/>
-      <div class="flex-end">
-        <div class="message" id="savedMessage">Saved</div>
-        <button id="saveSettingButton">Save Settings</button>
+      <div id="customSettingView">
+        <input id="settingName" placeholder="Enter name for the setting"/>
+        <textarea id="selectors" placeholder="Enter selectors, one per line"></textarea>
+        <textarea id="format" placeholder="Enter format string (e.g., 'Title: {Title}, URL: {URL}')"></textarea>
+        <input id="urlPattern" placeholder="URL Pattern"/>
+        <div class="flex-end">
+          <div class="message" id="savedMessage">Saved</div>
+          <button id="saveSettingButton">Save Settings</button>
+        </div>
       </div>
     </div>
 
