@@ -3,7 +3,12 @@
   "name": "Scriptable Copy",
   "version": "1.0",
   "description": "Copy specified content from websites to clipboard with a single click",
-  "permissions": ["activeTab", "clipboardWrite", "storage", "declarativeContent"],
+  "permissions": [
+    "activeTab",
+    "clipboardWrite",
+    "storage",
+    "declarativeContent"
+  ],
   "action": {
     "default_popup": "popup.html"
   },
@@ -17,4 +22,3 @@
     }
   ]
 }
-

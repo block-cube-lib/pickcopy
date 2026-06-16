@@ -1,5 +1,10 @@
 import { Setting } from './setting.ts';
-import { MessageRequest, GetTextRequest, GetUrlRequest, MessageResponse } from './message.ts';
+import {
+  GetTextRequest,
+  GetUrlRequest,
+  MessageRequest,
+  MessageResponse,
+} from './message.ts';
 //import { storage } from "npm:@extend-chrome/storage";
 
 const DefaultSetting = new Setting(
@@ -28,8 +33,8 @@ const PresetSettings = [DefaultSetting, TitleAndURLSetting, MarkdownSetting];
 
 const isDebug = true;
 const debugLog = (message: string) => {
-  if (isDebug) {  console.log(message); }
-}
+  if (isDebug) console.log(message);
+};
 
 const isPresetSetting = (id: string): boolean =>
   PresetSettings.some((setting) => setting.id === id);
@@ -76,7 +81,9 @@ class View {
     this.copyButton = document.getElementById(
       'copyButton',
     ) as HTMLButtonElement;
-    this.settingNameInput = document.getElementById('settingName') as HTMLInputElement;
+    this.settingNameInput = document.getElementById(
+      'settingName',
+    ) as HTMLInputElement;
     this.saveSettingButton = document.getElementById(
       'saveSettingButton',
     ) as HTMLButtonElement;
@@ -118,21 +125,17 @@ class View {
 
     const isPreset = isPresetSetting(setting.id);
 
-    this.settingNameInput.style.display = isPreset
-      ? 'none'
-      : 'block';
-    this.saveSettingButton.style.display = isPreset
-      ? 'none'
-      : 'block';
-    this.updatePreviewButton.style.display = isPreset
-      ? 'none'
-      : 'block';
-    
+    this.settingNameInput.style.display = isPreset ? 'none' : 'block';
+    this.saveSettingButton.style.display = isPreset ? 'none' : 'block';
+    this.updatePreviewButton.style.display = isPreset ? 'none' : 'block';
+
     this.selectorsInput.readOnly = isPreset;
     this.formatInput.readOnly = isPreset;
     this.urlPatternInput.readOnly = isPreset;
 
-    const selectOption = document.getElementById(setting.id) as HTMLOptionElement;
+    const selectOption = document.getElementById(
+      setting.id,
+    ) as HTMLOptionElement;
     if (selectOption) {
       selectOption.innerText = setting.name;
     }
@@ -145,7 +148,10 @@ class StorageCache {
   settings: Setting[];
   lastSelectedSettingIdDict: Dictionary<string, string>;
 
-  constructor(settings: Setting[],  lastSelectedSettingIdDict: Dictionary<string, string>) {
+  constructor(
+    settings: Setting[],
+    lastSelectedSettingIdDict: Dictionary<string, string>,
+  ) {
     this.settings = settings;
     this.lastSelectedSettingIdDict = lastSelectedSettingIdDict;
   }
@@ -181,12 +187,16 @@ class Model {
       TitleAndURLSetting,
       MarkdownSetting,
     );
-    this.currentSetting = this.settings.find((setting) => !isPresetSetting(setting.id)) ?? DefaultSetting;
+    this.currentSetting =
+      this.settings.find((setting) => !isPresetSetting(setting.id)) ??
+        DefaultSetting;
   }
 
   async loadSettings() {
     this.settings = await this.loadSettingsFromChromeStorage(null);
-    this.currentSetting = this.settings.find((setting) => !isPresetSetting(setting.id)) ?? DefaultSetting;
+    this.currentSetting =
+      this.settings.find((setting) => !isPresetSetting(setting.id)) ??
+        DefaultSetting;
     debugLog(`Loaded settings: ${JSON.stringify(this.settings, null, 2)}`);
   }
 
@@ -209,7 +219,11 @@ class Model {
 
   async loadStorageCacheFromChromeStorage() {
     const storageCache: StorageCache = await chrome.storage.sync.get(null);
-    debugLog(`load storageCahce from chrome storage: ${JSON.stringify(storageCache, null, 2)}`);
+    debugLog(
+      `load storageCahce from chrome storage: ${
+        JSON.stringify(storageCache, null, 2)
+      }`,
+    );
     return storageCache;
   }
 
@@ -227,8 +241,7 @@ class Model {
     );
     if (url !== null) {
       return settings.filter((s) => s.isUrlMatched(url));
-    }
-    else {
+    } else {
       return settings;
     }
   }
@@ -244,11 +257,15 @@ class Model {
     if (storageCache === undefined) {
       return null;
     }
-    const lastSelectedSettingId = storageCache.lastSelectedSettingIdDict?.[domain];
+    const lastSelectedSettingId = storageCache.lastSelectedSettingIdDict
+      ?.[domain];
     return lastSelectedSettingId;
   }
 
-  async saveLastSelectedSettingIdToChromeStorage(url: string, settingId: string) {
+  async saveLastSelectedSettingIdToChromeStorage(
+    url: string,
+    settingId: string,
+  ) {
     // Do not save if the URL is empty or not a valid HTTP/HTTPS URL.
     if (!url || !url.startsWith('http')) {
       return;
@@ -273,16 +290,22 @@ class Model {
     }
 
     // Find the existing setting.
-    const settingIndex = storageCache.settings.findIndex(s => s.id === this.currentSetting.id);
+    const settingIndex = storageCache.settings.findIndex((s) =>
+      s.id === this.currentSetting.id
+    );
 
     if (settingIndex > -1) {
       // Update the existing setting.
       storageCache.settings[settingIndex] = this.currentSetting;
-      debugLog(`overwrite setting: ${JSON.stringify(this.currentSetting, null, 2)}`);
+      debugLog(
+        `overwrite setting: ${JSON.stringify(this.currentSetting, null, 2)}`,
+      );
     } else {
       // Add a new setting.
       storageCache.settings.push(this.currentSetting);
-      debugLog(`save new setting: ${JSON.stringify(this.currentSetting, null, 2)}`);
+      debugLog(
+        `save new setting: ${JSON.stringify(this.currentSetting, null, 2)}`,
+      );
     }
 
     await chrome.storage.sync.set(storageCache);
@@ -301,14 +324,19 @@ class App {
   async initialize() {
     await this.model.initialize();
 
-    const urlResponse = await this.sendMessageToTab<string>(new GetUrlRequest());
+    const urlResponse = await this.sendMessageToTab<string>(
+      new GetUrlRequest(),
+    );
     this.model.currentUrl = urlResponse?.content ?? '';
     debugLog(`Current URL: ${this.model.currentUrl}`);
 
-    const lastSelectedId = await this.model.loadLastSelectedSettingIdFromChromeStorage(this.model.currentUrl);
+    const lastSelectedId = await this.model
+      .loadLastSelectedSettingIdFromChromeStorage(this.model.currentUrl);
     if (lastSelectedId) {
       // Check if the found setting exists.
-      const foundSetting = this.model.settings.find(s => s.id === lastSelectedId);
+      const foundSetting = this.model.settings.find((s) =>
+        s.id === lastSelectedId
+      );
       if (foundSetting) {
         this.model.selectSetting(lastSelectedId);
       }
@@ -384,8 +412,7 @@ class App {
       (event) => {
         const { target } = event;
         if (target instanceof HTMLTextAreaElement) {
-          this.model.currentSetting.selectors =
-            target.value.split('\n');
+          this.model.currentSetting.selectors = target.value.split('\n');
         }
       },
     );
@@ -395,15 +422,14 @@ class App {
       (event) => {
         const { target } = event;
         if (target instanceof HTMLTextAreaElement) {
-          this.model.currentSetting.format =
-            target.value;
+          this.model.currentSetting.format = target.value;
         }
       },
     );
 
     this.onSelectedSettingChanged(this.model.currentSetting.id);
 
-    debugLog("App initialized");
+    debugLog('App initialized');
   }
 
   async updateSettingSelector() {
@@ -443,10 +469,17 @@ class App {
 
   async onSelectedSettingChanged(id: string) {
     this.model.selectSetting(id);
-    debugLog(`Selected setting: ${id} -> ${JSON.stringify(this.model.currentSetting, null, 2)}`);
+    debugLog(
+      `Selected setting: ${id} -> ${
+        JSON.stringify(this.model.currentSetting, null, 2)
+      }`,
+    );
     this.view.updateSettingValue(this.model.currentSetting);
     await this.updatePreview();
-    await this.model.saveLastSelectedSettingIdToChromeStorage(this.model.currentUrl, id);
+    await this.model.saveLastSelectedSettingIdToChromeStorage(
+      this.model.currentUrl,
+      id,
+    );
   }
 
   async copyToClipboard() {
@@ -461,10 +494,13 @@ class App {
   async saveCurrentSetting() {
     this.model.currentSetting.name = this.view.settingNameInput.value;
     this.model.currentSetting.urlPattern = this.view.urlPatternInput.value;
-    this.model.currentSetting.selectors = this.view.selectorsInput.value.split('\n');
+    this.model.currentSetting.selectors = this.view.selectorsInput.value.split(
+      '\n',
+    );
     this.model.currentSetting.format = this.view.formatInput.value;
     await this.model.saveCurrentSettingToChromeStorage();
-    this.view.settingSelector.options.namedItem(this.model.currentSetting.id)!.innerText = this.model.currentSetting.name;
+    this.view.settingSelector.options.namedItem(this.model.currentSetting.id)!
+      .innerText = this.model.currentSetting.name;
 
     this.view.showSavedMessage();
   }
@@ -493,7 +529,9 @@ class App {
     return response?.content ?? '';
   }
 
-  async sendMessageToTab<T>(request: MessageRequest): Promise<MessageResponse<T> | null> {
+  async sendMessageToTab<T>(
+    request: MessageRequest,
+  ): Promise<MessageResponse<T> | null> {
     debugLog(`sendMessageToTab: request = ${JSON.stringify(request, null, 2)}`);
     const tabs = await chrome.tabs.query({
       active: true,
@@ -517,8 +555,7 @@ class App {
       }
       debugLog(`response = ${JSON.stringify(response, null, 2)}`);
       return response;
-    }
-    catch (error) {
+    } catch (error) {
       console.error(`Error sending message: ${error}`);
       return null;
     }

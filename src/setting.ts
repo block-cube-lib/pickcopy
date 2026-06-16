@@ -5,7 +5,13 @@ class Setting {
   selectors: string[];
   format: string;
 
-  constructor(id: string, name: string, urlPattern: string, selectors: string[], format: string) {
+  constructor(
+    id: string,
+    name: string,
+    urlPattern: string,
+    selectors: string[],
+    format: string,
+  ) {
     this.id = id;
     this.name = name;
     this.urlPattern = urlPattern;
@@ -30,7 +36,9 @@ class Setting {
     };
 
     // Escape other special characters before replacing '*' with '.*'.
-    const regexPattern = this.urlPattern.split('*').map(escapeRegExp).join('.*');
+    const regexPattern = this.urlPattern.split('*').map(escapeRegExp).join(
+      '.*',
+    );
     return new RegExp(regexPattern).test(url);
   }
 }

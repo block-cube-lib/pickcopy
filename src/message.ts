@@ -44,4 +44,4 @@ class MessageResponse<T> {
   }
 }
 
-export { MessageRequest, GetTextRequest, GetUrlRequest, MessageResponse };
+export { GetTextRequest, GetUrlRequest, MessageRequest, MessageResponse };

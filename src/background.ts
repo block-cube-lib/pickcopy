@@ -6,7 +6,7 @@ chrome.runtime.onInstalled.addListener(() => {
           pageUrl: { schemes: ['http', 'https'] },
         }),
       ],
-      actions: [new chrome.declarativeContent.ShowPageAction()],
+      actions: [new chrome.declarativeContent.ShowAction()],
     }]);
   });
 });

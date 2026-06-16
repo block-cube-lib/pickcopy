@@ -1,6 +1,6 @@
-import { Setting } from "./setting.ts";
-import { MessageResponse } from "./message.ts";
-import { MessageType } from "./message_type.ts";
+import { Setting } from './setting.ts';
+import { MessageResponse } from './message.ts';
+import { MessageType } from './message_type.ts';
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   try {
@@ -21,8 +21,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const response = MessageResponse.createError('Invalid message');
         sendResponse(response);
       }
-    };
-
+    }
   } catch (error) {
     const errorMessage =
       `Error processing message: ${error}\nmessage: ${message}`;
@@ -42,19 +41,24 @@ function getText(setting: Setting) {
     } // if selector includes '@', it is an attribute
     else if (selector.includes('@')) {
       const [valueSelector, attribute] = selector.split('@');
-      const element = document.querySelector(valueSelector) as HTMLElement | null;
+      const element = document.querySelector(valueSelector) as
+        | HTMLElement
+        | null;
       if (element === null || element === undefined) {
         return '';
       } else if (element.hasAttribute(attribute)) {
         return element.getAttribute(attribute) ?? '';
       }
-      element.innerText;
+      return element.innerText;
     } else {
       const element = document.querySelector(selector) as HTMLElement | null;
-      if (element as HTMLTextAreaElement != null) {
-        return (element as HTMLTextAreaElement).value;
-      }
-      else {
+      if (
+        element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLSelectElement
+      ) {
+        return element.value;
+      } else {
         return element?.innerText ?? '';
       }
     }
@@ -76,4 +80,3 @@ function getText(setting: Setting) {
 
   return formattedString;
 }
-
