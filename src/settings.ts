@@ -1,118 +1,94 @@
-/*
-document.addEventListener('DOMContentLoaded', () => {
-  const settingsList = document.getElementById('settingsList');
-  const exportSettingsButton = document.getElementById('exportSettings');
-  const importFileButton = document.getElementById('importFileButton');
-  const importFileInput = document.getElementById('importFile');
-  const importPasteButton = document.getElementById('importPasteButton');
-  const importTextArea = document.getElementById('importTextArea');
+import { Setting } from './setting.ts';
 
-  const loadSettings = () => {
-    chrome.storage.sync.get(null, (items) => {
-      settingsList.innerHTML = '';
-      for (const [id, setting] of Object.entries(items)) {
-        const div = document.createElement('div');
-        div.className = 'setting-item';
-        div.innerHTML = `
-          <div>
-            <strong>Pattern:</strong> ${setting.pattern}<br>
-            <strong>Name:</strong> ${setting.name}<br>
-            <strong>Selectors:</strong><br> ${
-          setting.selectors.join('<br>')
-        }<br>
-            <strong>Format:</strong> ${setting.format}<br>
-            <button data-id="${id}" class="delete">Delete</button>
-          </div>
-        `;
-        settingsList.appendChild(div);
-      }
+type StorageCache = {
+  settings: Setting[];
+  lastSelectedSettingIdDict: { [key: string]: string };
+};
 
-      document.querySelectorAll('.delete').forEach((button) => {
-        button.addEventListener('click', (event) => {
-          const id = event.target.getAttribute('data-id');
-          chrome.storage.sync.remove(id, loadSettings);
-        });
-      });
-    });
-  };
+class SettingsPage {
+  private settingId: string;
+  private setting: Setting | null = null;
 
-  const exportSettings = () => {
-    chrome.storage.sync.get(null, (items) => {
-      const dataStr = 'data:text/json;charset=utf-8,' +
-        encodeURIComponent(JSON.stringify(items));
-      const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute('href', dataStr);
-      downloadAnchorNode.setAttribute('download', 'settings.json');
-      document.body.appendChild(downloadAnchorNode);
-      downloadAnchorNode.click();
-      downloadAnchorNode.remove();
-    });
-  };
+  private nameInput = document.getElementById('settingName') as HTMLInputElement;
+  private selectorsInput = document.getElementById('selectors') as HTMLTextAreaElement;
+  private formatInput = document.getElementById('format') as HTMLTextAreaElement;
+  private urlPatternInput = document.getElementById('urlPattern') as HTMLInputElement;
+  private saveButton = document.getElementById('saveButton') as HTMLButtonElement;
+  private deleteButton = document.getElementById('deleteButton') as HTMLButtonElement;
+  private savedMessage = document.getElementById('savedMessage') as HTMLElement;
 
-  const importSettings = (json, mode) => {
-    const importedSettings = JSON.parse(json);
-    chrome.storage.sync.get(null, (currentSettings) => {
-      const mergedSettings = { ...currentSettings };
-      for (const [id, setting] of Object.entries(importedSettings)) {
-        if (mergedSettings[id]) {
-          if (mode === 'overwrite') {
-            mergedSettings[id] = setting;
-          } else if (mode === 'newId') {
-            mergedSettings[generateId()] = setting;
-          }
-        } else {
-          mergedSettings[id] = setting;
-        }
-      }
-      chrome.storage.sync.set(mergedSettings, () => {
-        alert('Settings imported!');
-        loadSettings();
-      });
-    });
-  };
+  constructor() {
+    const urlParams = new URLSearchParams(window.location.search);
+    this.settingId = urlParams.get('id')!;
+    if (!this.settingId) {
+      document.body.innerHTML = '<h1>Error: No setting ID provided.</h1>';
+      return;
+    }
+    this.initialize();
+  }
 
-  const generateId = () => {
-    return '_' + Math.random().toString(36).substr(2, 9);
-  };
+  private async initialize() {
+    await this.loadSetting();
+    this.populateForm();
+    this.saveButton.addEventListener('click', () => this.saveSetting());
+    this.deleteButton.addEventListener('click', () => this.deleteSetting());
+  }
 
-  exportSettingsButton.addEventListener('click', exportSettings);
+  private async loadSetting() {
+    const cache: StorageCache = await chrome.storage.sync.get(null);
+    const savedSettings = cache.settings ?? [];
+    this.setting = savedSettings.find(s => s.id === this.settingId) ?? null;
+  }
 
-  importFileButton.addEventListener('click', () => {
-    importFileInput.click();
-  });
+  private populateForm() {
+    if (!this.setting) {
+      document.body.innerHTML = `<h1>Error: Setting with ID "${this.settingId}" not found.</h1>`;
+      return;
+    }
+    this.nameInput.value = this.setting.name;
+    this.selectorsInput.value = this.setting.selectors.join('\n');
+    this.formatInput.value = this.setting.format;
+    this.urlPatternInput.value = this.setting.urlPattern;
+  }
 
-  importFileInput.addEventListener('change', (event) => {
-    const file = event.target.files[0];
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const json = e.target.result;
-      const mode = prompt(
-        "Enter import mode: 'overwrite', 'newId', or 'ignore'",
+  private async saveSetting() {
+    if (!this.setting) return;
+
+    const cache: StorageCache = await chrome.storage.sync.get(null);
+    const settings = cache.settings ?? [];
+    const settingIndex = settings.findIndex(s => s.id === this.settingId);
+
+    if (settingIndex > -1) {
+      const updatedSetting = new Setting(
+        this.settingId,
+        this.nameInput.value,
+        this.urlPatternInput.value,
+        this.selectorsInput.value.split('\n').filter(s => s.trim() !== ''),
+        this.formatInput.value
       );
-      if (['overwrite', 'newId', 'ignore'].includes(mode)) {
-        importSettings(json, mode);
-      } else {
-        alert('Invalid mode');
-      }
-    };
-    reader.readAsText(file);
-  });
+      settings[settingIndex] = updatedSetting;
+      cache.settings = settings;
+      await chrome.storage.sync.set(cache);
+      this.showSavedMessage();
+    }
+  }
 
-  importPasteButton.addEventListener('click', () => {
-    importTextArea.style.display = 'block';
-    importTextArea.addEventListener('change', (event) => {
-      const json = event.target.value;
-      const mode = prompt(
-        "Enter import mode: 'overwrite', 'newId', or 'ignore'",
-      );
-      if (['overwrite', 'newId', 'ignore'].includes(mode)) {
-        importSettings(json, mode);
-      } else {
-        alert('Invalid mode');
-      }
-    });
-  });
+  private async deleteSetting() {
+    if (!confirm(`Are you sure you want to delete the setting "${this.setting?.name}"?`)) {
+      return;
+    }
+    const cache: StorageCache = await chrome.storage.sync.get(null);
+    cache.settings = (cache.settings ?? []).filter(s => s.id !== this.settingId);
+    await chrome.storage.sync.set(cache);
+    window.close();
+  }
 
-  loadSettings();
-});
-*/
+  private showSavedMessage() {
+    this.savedMessage.style.display = 'block';
+    setTimeout(() => {
+      this.savedMessage.style.display = 'none';
+    }, 2000);
+  };
+}
+
+new SettingsPage();

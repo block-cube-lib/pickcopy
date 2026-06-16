@@ -51,7 +51,12 @@ function getText(setting: Setting) {
       element.innerText;
     } else {
       const element = document.querySelector(selector) as HTMLElement | null;
-      return element?.innerText ?? '';
+      if (element as HTMLTextAreaElement != null) {
+        return (element as HTMLTextAreaElement).value;
+      }
+      else {
+        return element?.innerText ?? '';
+      }
     }
   }) as string[];
 

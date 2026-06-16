@@ -22,3 +22,4 @@ const bundle_file = async (name: string) => {
 bundle_file('background.ts');
 bundle_file('content.ts');
 bundle_file('popup.ts');
+bundle_file('settings.ts');

@@ -1,16 +1,58 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Scriptable Copy - All Settings</title>
+  <title>Edit Setting</title>
   <style>
     body {
-      width: 500px;
+      width: 600px;
       padding: 10px;
       font-family: Arial, sans-serif;
     }
-
-    button {
+    textarea, input {
       width: 100%;
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    .button-row {
+      display: flex;
+      justify-content: space-between;
+    }
+    .button-row button {
+      padding: 10px;
+      width: 48%;
+    }
+    #deleteButton {
+      background-color: #f44336;
+      color: white;
+      border: none;
+    }
+    .message {
+      display: none;
+      text-align: center;
+      padding: 8px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      background-color: #4CAF50;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h3>Edit Setting</h3>
+  <div class="message" id="savedMessage">Saved!</div>
+  <input id="settingName" placeholder="Enter name for the setting"/>
+  <textarea id="selectors" placeholder="Enter selectors, one per line" rows="5"></textarea>
+  <textarea id="format" placeholder="Enter format string (e.g., 'Title: {Title}, URL: {URL}')" rows="3"></textarea>
+  <input id="urlPattern" placeholder="URL Pattern"/>
+  <div class="button-row">
+    <button id="saveButton">Save</button>
+    <button id="deleteButton">Delete</button>
+  </div>
+  <script type="module" src="./settings.js"></script>
+</body>
+</html>
       padding: 10px;
       margin-bottom: 10px;
     }
@@ -35,4 +77,3 @@
   <script src="settings.js"></script>
 </body>
 </html>
-

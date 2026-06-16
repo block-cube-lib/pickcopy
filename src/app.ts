@@ -41,6 +41,7 @@ class View {
   readonly settingSelector: HTMLSelectElement;
   readonly addSettingButton: HTMLButtonElement;
   readonly copyButton: HTMLButtonElement;
+  readonly editInWindowButton: HTMLButtonElement;
   readonly urlPatterFilterEnabledCheckBox: HTMLInputElement;
   readonly settingNameInput: HTMLInputElement;
   readonly saveSettingButton: HTMLButtonElement;
@@ -65,6 +66,9 @@ class View {
     ) as HTMLSelectElement;
     this.addSettingButton = document.getElementById(
       'addSettingButton',
+    ) as HTMLButtonElement;
+    this.editInWindowButton = document.getElementById(
+      'editInWindowButton',
     ) as HTMLButtonElement;
     this.urlPatterFilterEnabledCheckBox = document.getElementById(
       'urlPatterFilterEnabledCheckBox',
@@ -340,6 +344,21 @@ class App {
         this.view.updateSettingValue(setting);
       },
     );
+
+    this.view.editInWindowButton.addEventListener('click', () => {
+      const settingId = this.model.currentSetting.id;
+      if (isPresetSetting(settingId)) {
+        alert('Preset settings cannot be edited in a new window.');
+        return;
+      }
+      const url = chrome.runtime.getURL(`settings.html?id=${settingId}`);
+      chrome.windows.create({
+        url: url,
+        type: 'popup',
+        width: 640,
+        height: 480,
+      });
+    });
 
     this.view.urlPatterFilterEnabledCheckBox.addEventListener(
       'change',
