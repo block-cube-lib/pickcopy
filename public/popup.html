@@ -8,30 +8,26 @@
         box-sizing: border-box;
       }
 
-      /* Layout: fixed header, scrollable middle, fixed footer.
+      /* Layout: header, scrollable middle, footer, all in normal flow.
+         Do NOT give html/body height:100% or make the middle a flex-grow
+         scroll area: Chrome sizes the popup from the content's intrinsic
+         height, and a scrollable flex child contributes ~0 to it, which
+         collapsed the whole settings area to a thin strip. Instead the
+         middle is capped with max-height, so the popup grows with the
+         content up to the cap and only the middle scrolls beyond it.
          The whole popup never exceeds Chrome's 600px popup height. */
-      html, body {
-        height: 100%;
-      }
-
       body {
         width: 450px;
-        max-height: 600px;
-        display: flex;
-        flex-direction: column;
         font-family: Arial, sans-serif;
         margin: 0;
-        overflow: hidden;
       }
 
       .popup-header {
-        flex: none;
         padding: 12px 12px 0 12px;
       }
 
       .popup-main {
-        flex: 1 1 auto;
-        min-height: 0;
+        max-height: 395px;
         overflow-y: auto;
         padding: 0 12px;
       }
