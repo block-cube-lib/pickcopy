@@ -4,8 +4,13 @@ import {
   GetUrlRequest,
   MessageRequest,
   MessageResponse,
+  StartPickRequest,
 } from './message.ts';
-import { loadStorageData, saveStorageData } from './storage.ts';
+import {
+  loadStorageData,
+  saveStorageData,
+} from './storage.ts';
+import type { PendingPickedSelector, PendingPick } from './storage.ts';
 
 const DefaultSetting = new Setting(
   'defaultSetting',
@@ -50,6 +55,7 @@ class View {
   readonly settingSelector: HTMLSelectElement;
   readonly addSettingButton: HTMLButtonElement;
   readonly copyButton: HTMLButtonElement;
+  readonly pickElementButton: HTMLButtonElement;
   readonly editInWindowButton: HTMLButtonElement;
   readonly urlPatterFilterEnabledCheckBox: HTMLInputElement;
   readonly settingNameInput: HTMLInputElement;
@@ -75,6 +81,9 @@ class View {
     ) as HTMLSelectElement;
     this.addSettingButton = document.getElementById(
       'addSettingButton',
+    ) as HTMLButtonElement;
+    this.pickElementButton = document.getElementById(
+      'pickElementButton',
     ) as HTMLButtonElement;
     this.editInWindowButton = document.getElementById(
       'editInWindowButton',
@@ -130,6 +139,9 @@ class View {
     const isPreset = isPresetSetting(setting.id);
 
     this.customSettingView.style.display = isPreset ? 'none' : 'block';
+    // The footer (with Save) is always visible; presets cannot be saved,
+    // so disable the button for them instead of hiding the footer.
+    this.saveSettingButton.disabled = isPreset;
 
     const selectOption = document.getElementById(
       setting.id,
@@ -322,6 +334,10 @@ class App {
   async initialize() {
     await this.model.initialize();
 
+    // Apply selectors confirmed in the element picker (if any) before
+    // choosing which setting to show.
+    const pickedSettingId = await this.applyPendingPickedSelectors();
+
     const urlResponse = await this.sendMessageToTab<string>(
       new GetUrlRequest(),
     );
@@ -330,7 +346,9 @@ class App {
 
     const lastSelectedId = await this.model
       .loadLastSelectedSettingIdFromChromeStorage(this.model.currentUrl);
-    if (lastSelectedId) {
+    if (pickedSettingId) {
+      this.model.selectSetting(pickedSettingId);
+    } else if (lastSelectedId) {
       // Check if the found setting exists.
       const foundSetting = this.model.settings.find((s) =>
         s.id === lastSelectedId
@@ -369,6 +387,11 @@ class App {
         await this.updateSettingSelector();
         this.view.updateSettingValue(setting);
       },
+    );
+
+    this.view.pickElementButton.addEventListener(
+      'click',
+      () => this.startElementPick(),
     );
 
     this.view.editInWindowButton.addEventListener('click', () => {
@@ -478,6 +501,108 @@ class App {
       this.model.currentUrl,
       id,
     );
+  }
+
+  // Apply selectors the element picker confirmed while the popup was
+  // closed. Returns the setting ID to select, or null when there was
+  // nothing applicable. Pending state is always cleared; picks whose
+  // target setting no longer exists are discarded.
+  async applyPendingPickedSelectors(): Promise<string | null> {
+    const data = await chrome.storage.local.get([
+      'pendingPick',
+      'pendingPickedSelectors',
+    ]);
+    const picked = (data.pendingPickedSelectors ??
+      []) as PendingPickedSelector[];
+    if (picked.length === 0) {
+      if (data.pendingPick !== undefined) {
+        // A pick was started but never confirmed (e.g. browser closed).
+        await chrome.storage.local.remove('pendingPick');
+      }
+      return null;
+    }
+
+    let appliedSettingId: string | null = null;
+    for (const entry of picked) {
+      const setting = this.model.settings.find((s) =>
+        s.id === entry.settingId && !isPresetSetting(s.id)
+      );
+      if (!setting) {
+        continue; // Target setting was deleted: discard this pick.
+      }
+      if (!setting.selectors.includes(entry.selector)) {
+        setting.selectors.push(entry.selector);
+      }
+      // Mirror the change into the storage copy so it can be persisted.
+      const stored = this.model.storageCache.settings.find((s) =>
+        s.id === entry.settingId
+      );
+      if (stored) {
+        stored.selectors = setting.selectors;
+      }
+      appliedSettingId = entry.settingId;
+    }
+
+    if (appliedSettingId !== null) {
+      try {
+        await saveStorageData(this.model.storageCache);
+      } catch (error) {
+        console.error(`Failed to save picked selector: ${error}`);
+      }
+    }
+    await chrome.storage.local.remove([
+      'pendingPick',
+      'pendingPickedSelectors',
+    ]);
+    return appliedSettingId;
+  }
+
+  async startElementPick() {
+    // Presets have no editable selectors: create a new custom setting
+    // for the current URL first (same behaviour as the + button).
+    if (isPresetSetting(this.model.currentSetting.id)) {
+      const setting = Setting.createNew();
+      setting.urlPattern = this.model.currentUrl;
+      this.model.addSetting(setting);
+      this.model.currentSetting = setting;
+    } else {
+      // Take over any unsaved edits shown in the form.
+      this.model.currentSetting.name = this.view.settingNameInput.value;
+      this.model.currentSetting.urlPattern =
+        this.view.urlPatternInput.value;
+      this.model.currentSetting.selectors = this.view.selectorsInput
+        .value.split('\n').filter((s) => s.trim() !== '');
+      this.model.currentSetting.format = this.view.formatInput.value;
+    }
+
+    // The target setting must exist in storage when the popup reopens,
+    // otherwise the confirmed pick would have nowhere to go.
+    try {
+      await this.model.saveCurrentSettingToChromeStorage();
+    } catch (error) {
+      console.error(`Failed to save setting before picking: ${error}`);
+      alert('Failed to save the setting.');
+      return;
+    }
+
+    const pendingPick: PendingPick = {
+      settingId: this.model.currentSetting.id,
+    };
+    await chrome.storage.local.set({ pendingPick });
+
+    const response = await this.sendMessageToTab<null>(
+      new StartPickRequest(this.model.currentSetting.id),
+    );
+    if (!response || !response.isSuccess) {
+      // The content script is not available on this page.
+      await chrome.storage.local.remove('pendingPick');
+      alert(
+        'Could not start the element picker on this page.',
+      );
+      return;
+    }
+
+    window.close();
   }
 
   async copyToClipboard() {

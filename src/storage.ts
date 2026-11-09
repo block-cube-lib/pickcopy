@@ -12,6 +12,19 @@ type StoredData = {
   [key: string]: unknown;
 };
 
+// Element-picker hand-off via chrome.storage.local:
+// the popup stores `pendingPick` before closing, the content script
+// appends confirmed picks to `pendingPickedSelectors`, and the next
+// popup session applies and clears both keys.
+type PendingPick = {
+  settingId: string;
+};
+
+type PendingPickedSelector = {
+  settingId: string;
+  selector: string;
+};
+
 const hasStoredData = (data: StoredData): boolean =>
   (Array.isArray(data.settings) && data.settings.length > 0) ||
   (data.lastSelectedSettingIdDict !== undefined &&
@@ -39,4 +52,4 @@ async function saveStorageData(data: object): Promise<void> {
 }
 
 export { loadStorageData, saveStorageData };
-export type { StoredData };
+export type { PendingPick, PendingPickedSelector, StoredData };

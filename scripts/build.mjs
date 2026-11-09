@@ -12,7 +12,7 @@ mkdirSync(dist, { recursive: true });
 // Copy static assets (manifest.json, popup.html, settings.html) into dist/.
 cpSync(join(root, 'public'), dist, { recursive: true });
 
-const entryPoints = ['background', 'content', 'popup', 'settings'].map(
+const entryPoints = ['content', 'popup', 'settings'].map(
   (name) => join(root, 'src', `${name}.ts`),
 );
 

@@ -33,6 +33,13 @@
         justify-content: space-between;
         gap: 10px;
       }
+      /* Keep Save/Delete reachable without scrolling in the edit view. */
+      #editSettingView .button-row {
+        position: sticky;
+        bottom: 0;
+        background-color: #fff;
+        padding: 10px 0 5px 0;
+      }
       .button-row button {
         flex: 1;
       }

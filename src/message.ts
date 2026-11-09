@@ -24,6 +24,15 @@ class GetUrlRequest extends MessageRequest {
   }
 }
 
+class StartPickRequest extends MessageRequest {
+  settingId: string;
+
+  constructor(settingId: string) {
+    super(MessageType.StartPick);
+    this.settingId = settingId;
+  }
+}
+
 class MessageResponse<T> {
   isSuccess: boolean;
   content: T;
@@ -44,4 +53,10 @@ class MessageResponse<T> {
   }
 }
 
-export { GetTextRequest, GetUrlRequest, MessageRequest, MessageResponse };
+export {
+  GetTextRequest,
+  GetUrlRequest,
+  MessageRequest,
+  MessageResponse,
+  StartPickRequest,
+};
