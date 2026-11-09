@@ -125,13 +125,7 @@ class View {
 
     const isPreset = isPresetSetting(setting.id);
 
-    this.settingNameInput.style.display = isPreset ? 'none' : 'block';
-    this.saveSettingButton.style.display = isPreset ? 'none' : 'block';
-    this.updatePreviewButton.style.display = isPreset ? 'none' : 'block';
-
-    this.selectorsInput.readOnly = isPreset;
-    this.formatInput.readOnly = isPreset;
-    this.urlPatternInput.readOnly = isPreset;
+    this.customSettingView.style.display = isPreset ? 'none' : 'block';
 
     const selectOption = document.getElementById(
       setting.id,

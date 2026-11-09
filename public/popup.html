@@ -3,86 +3,151 @@
   <head>
     <title>Scriptable Copy</title>
     <style>
-      body {
-        width: 600px;
-        padding: 10px;
-        font-family: Arial, sans-serif;
+      * {
+        box-sizing: border-box;
       }
 
-      textarea:read-only, input:read-only {
-        background-color: #ccc;
+      body {
+        width: 450px;
+        padding: 12px;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        overflow-y: auto;
+      }
+
+      h3 {
+        margin: 0 0 10px 0;
+        font-size: 1.3em;
+        color: #333;
+      }
+
+      #copyButton {
+        width: 100%;
+        padding: 10px;
+        font-size: 1.1em;
+        font-weight: bold;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-bottom: 12px;
+      }
+
+      #copyButton:hover {
+        background-color: #45a049;
       }
 
       .flex-end {
         display: flex;
         justify-content: flex-end;
-      }
-
-      .flex-end > * {
-        margin-left: 10px;
+        align-items: center;
+        gap: 8px;
       }
 
       .group {
-        margin-bottom: 15px;
+        margin-bottom: 12px;
         padding: 10px;
-        border: 1px solid #ccc;
+        border: 1px solid #ddd;
         border-radius: 5px;
         background-color: #f9f9f9;
       }
 
+      .group-title {
+        font-size: 0.9em;
+        font-weight: bold;
+        color: #666;
+        margin-bottom: 6px;
+      }
+
       textarea, input:not([type='checkbox']) {
         width: 100%;
-        margin-bottom: 10px;
-        padding: 8px;
+        margin-bottom: 8px;
+        padding: 6px 8px;
         border-radius: 5px;
         border: 1px solid #ccc;
+        font-family: inherit;
+        font-size: 0.95em;
+      }
+
+      textarea {
+        resize: vertical;
+      }
+
+      #preview {
+        height: 50px;
+        margin-bottom: 6px;
+      }
+
+      #selectors, #format {
+        height: 45px;
+        margin-bottom: 8px;
+      }
+
+      #settingName, #urlPattern {
+        margin-bottom: 8px;
       }
 
       select {
         width: 100%;
         border-radius: 5px;
         border: 1px solid #ccc;
+        padding: 4px;
+        margin-bottom: 8px;
       }
 
-      .result-icon {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        vertical-align: middle;
+      .section-title {
+        font-size: 1em;
+        font-weight: bold;
+        color: #333;
+        margin: 12px 0 6px 0;
       }
 
-      .result-icon.success {
-        background-color: green;
-        border-radius: 50%;
+      button {
+        padding: 6px 12px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        cursor: pointer;
       }
 
-      .result-icon.fail {
-        background-color: red;
-        border-radius: 50%;
+      button:hover {
+        background-color: #f0f0f0;
+      }
+
+      #addSettingButton {
+        font-weight: bold;
+        background-color: #e0e0e0;
+      }
+
+      #saveSettingButton {
+        background-color: #2196f3;
+        color: white;
+        border: none;
+      }
+
+      #saveSettingButton:hover {
+        background-color: #1e88e5;
       }
 
       #allSettingsLink {
         text-align: center;
         display: block;
-        margin-top: 20px;
+        margin-top: 10px;
+        color: #2196f3;
+        text-decoration: none;
+        font-size: 0.9em;
+      }
+
+      #allSettingsLink:hover {
+        text-decoration: underline;
       }
 
       .message {
         display: none;
-      }
-
-      .radio-container {
-        display: flex;
-        align-items: center;
-      }
-
-      .radio-container > input {
-        width: auto;
-      }
-
-      .button-row {
-        display: flex;
-        gap: 10px;
+        font-size: 0.85em;
+        color: green;
+        font-weight: bold;
       }
     </style>
   </head>
@@ -90,7 +155,7 @@
     <h3>Scriptable Copy</h3>
     <button id="copyButton">Copy to Clipboard</button>
     <div class="group" id="previewGroup">
-      Preview
+      <div class="group-title">Preview</div>
       <textarea id="preview"></textarea>
       <div class="flex-end">
         <div class="message" id="copiedMessage">Copied</div>
@@ -101,16 +166,16 @@
     <div class="section-title">Setting Selector</div>
 
     <div class="group">
-      <div>
+      <div style="margin-bottom: 8px">
         <input
           type="checkbox"
           id="urlPatterFilterEnabledCheckBox"
           value="urlPatternFilterEnabled"
         />
-        <label for="urlPatternFilterEnabled">URL Pattern Filter</label>
+        <label for="urlPatterFilterEnabledCheckBox">URL Pattern Filter</label>
       </div>
-      <select id="settingSelector" size="5"></select>
-      <div class="flex-end">
+      <select id="settingSelector" size="3"></select>
+      <div class="flex-end" style="margin-bottom: 8px">
         <button id="addSettingButton">+</button>
         <button id="editInWindowButton">Edit in Window</button>
       </div>
