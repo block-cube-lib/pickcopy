@@ -1,4 +1,4 @@
-import { Setting } from './setting.ts';
+import { parseSelectorsInput, Setting } from './setting.ts';
 import {
   GetTextRequest,
   GetUrlRequest,
@@ -7,10 +7,15 @@ import {
   StartPickRequest,
 } from './message.ts';
 import {
+  clearPendingPickState,
+  loadPendingPickedSelectors,
+  loadPendingPick,
   loadStorageData,
+  removePendingPick,
+  savePendingPick,
   saveStorageData,
 } from './storage.ts';
-import type { PendingPickedSelector, PendingPick } from './storage.ts';
+import type { PendingPick } from './storage.ts';
 
 const DefaultSetting = new Setting(
   'defaultSetting',
@@ -143,11 +148,19 @@ class View {
     // so disable the button for them instead of hiding the footer.
     this.saveSettingButton.disabled = isPreset;
 
-    const selectOption = document.getElementById(
-      setting.id,
-    ) as HTMLOptionElement;
-    if (selectOption) {
-      selectOption.innerText = setting.name;
+    this.setOptionText(setting.id, setting.name);
+  }
+
+  // Updates the label of the <option> for a setting. Options carry no
+  // id attribute (setting IDs come from user/imported data and must
+  // never be used as DOM ids), so the option is found by value within
+  // this view's own <select>.
+  setOptionText(id: string, name: string) {
+    for (const option of Array.from(this.settingSelector.options)) {
+      if (option.value === id) {
+        option.textContent = name;
+        return;
+      }
     }
   }
 }
@@ -228,7 +241,13 @@ class Model {
   }
 
   async loadStorageCacheFromChromeStorage() {
-    const storageCache = await loadStorageData() as StorageCache;
+    // loadStorageData() always returns normalized data (settings and
+    // the dict are guaranteed to exist, even on a fresh install).
+    const data = await loadStorageData();
+    const storageCache = new StorageCache(
+      data.settings as unknown as Setting[],
+      data.lastSelectedSettingIdDict,
+    );
     debugLog('load storageCache from chrome storage');
     return storageCache;
   }
@@ -287,7 +306,10 @@ class Model {
     }
     storageCache.lastSelectedSettingIdDict[domain] = settingId;
     try {
-      await saveStorageData(storageCache);
+      // Write back only the dict, never the whole cache.
+      await saveStorageData({
+        lastSelectedSettingIdDict: storageCache.lastSelectedSettingIdDict,
+      });
     } catch (error) {
       console.error(`Failed to save last selected setting: ${error}`);
     }
@@ -318,7 +340,8 @@ class Model {
       );
     }
 
-    await saveStorageData(storageCache);
+    // Write back only the settings list.
+    await saveStorageData({ settings: storageCache.settings });
   }
 }
 
@@ -341,7 +364,8 @@ class App {
     const urlResponse = await this.sendMessageToTab<string>(
       new GetUrlRequest(),
     );
-    this.model.currentUrl = urlResponse?.content ?? '';
+    this.model.currentUrl = urlResponse?.content ??
+      (await this.getActiveTabUrl());
     debugLog(`Current URL: ${this.model.currentUrl}`);
 
     const lastSelectedId = await this.model
@@ -394,10 +418,21 @@ class App {
       () => this.startElementPick(),
     );
 
-    this.view.editInWindowButton.addEventListener('click', () => {
+    this.view.editInWindowButton.addEventListener('click', async () => {
       const settingId = this.model.currentSetting.id;
       if (isPresetSetting(settingId)) {
         alert('Preset settings cannot be edited in a new window.');
+        return;
+      }
+      // Persist first (including a brand-new, not yet saved setting):
+      // the settings window loads the setting from storage, so without
+      // saving it would report "not found".
+      this.syncCurrentSettingFromForm();
+      try {
+        await this.model.saveCurrentSettingToChromeStorage();
+      } catch (error) {
+        console.error(`Failed to save setting before editing: ${error}`);
+        alert('Failed to save the setting.');
         return;
       }
       const url = chrome.runtime.getURL(`settings.html?id=${settingId}`);
@@ -428,12 +463,17 @@ class App {
       () => this.saveCurrentSetting(),
     );
 
+    // All form fields are mirrored into the model as they are edited,
+    // using the same normalization as saving, so the preview always
+    // works on exactly what would be saved.
     this.view.selectorsInput.addEventListener(
       'input',
       (event) => {
         const { target } = event;
         if (target instanceof HTMLTextAreaElement) {
-          this.model.currentSetting.selectors = target.value.split('\n');
+          this.model.currentSetting.selectors = parseSelectorsInput(
+            target.value,
+          );
         }
       },
     );
@@ -444,6 +484,26 @@ class App {
         const { target } = event;
         if (target instanceof HTMLTextAreaElement) {
           this.model.currentSetting.format = target.value;
+        }
+      },
+    );
+
+    this.view.settingNameInput.addEventListener(
+      'input',
+      (event) => {
+        const { target } = event;
+        if (target instanceof HTMLInputElement) {
+          this.model.currentSetting.name = target.value;
+        }
+      },
+    );
+
+    this.view.urlPatternInput.addEventListener(
+      'input',
+      (event) => {
+        const { target } = event;
+        if (target instanceof HTMLInputElement) {
+          this.model.currentSetting.urlPattern = target.value;
         }
       },
     );
@@ -481,7 +541,6 @@ class App {
       );
     }
     const option = document.createElement('option');
-    option.id = id;
     option.value = id;
     option.innerText = name;
     this.view.settingSelector.appendChild(option);
@@ -508,16 +567,11 @@ class App {
   // nothing applicable. Pending state is always cleared; picks whose
   // target setting no longer exists are discarded.
   async applyPendingPickedSelectors(): Promise<string | null> {
-    const data = await chrome.storage.local.get([
-      'pendingPick',
-      'pendingPickedSelectors',
-    ]);
-    const picked = (data.pendingPickedSelectors ??
-      []) as PendingPickedSelector[];
+    const picked = await loadPendingPickedSelectors();
     if (picked.length === 0) {
-      if (data.pendingPick !== undefined) {
+      if ((await loadPendingPick()) !== null) {
         // A pick was started but never confirmed (e.g. browser closed).
-        await chrome.storage.local.remove('pendingPick');
+        await removePendingPick();
       }
       return null;
     }
@@ -545,15 +599,14 @@ class App {
 
     if (appliedSettingId !== null) {
       try {
-        await saveStorageData(this.model.storageCache);
+        await saveStorageData({
+          settings: this.model.storageCache.settings,
+        });
       } catch (error) {
         console.error(`Failed to save picked selector: ${error}`);
       }
     }
-    await chrome.storage.local.remove([
-      'pendingPick',
-      'pendingPickedSelectors',
-    ]);
+    await clearPendingPickState();
     return appliedSettingId;
   }
 
@@ -567,12 +620,7 @@ class App {
       this.model.currentSetting = setting;
     } else {
       // Take over any unsaved edits shown in the form.
-      this.model.currentSetting.name = this.view.settingNameInput.value;
-      this.model.currentSetting.urlPattern =
-        this.view.urlPatternInput.value;
-      this.model.currentSetting.selectors = this.view.selectorsInput
-        .value.split('\n').filter((s) => s.trim() !== '');
-      this.model.currentSetting.format = this.view.formatInput.value;
+      this.syncCurrentSettingFromForm();
     }
 
     // The target setting must exist in storage when the popup reopens,
@@ -588,14 +636,14 @@ class App {
     const pendingPick: PendingPick = {
       settingId: this.model.currentSetting.id,
     };
-    await chrome.storage.local.set({ pendingPick });
+    await savePendingPick(pendingPick);
 
     const response = await this.sendMessageToTab<null>(
       new StartPickRequest(this.model.currentSetting.id),
     );
     if (!response || !response.isSuccess) {
       // The content script is not available on this page.
-      await chrome.storage.local.remove('pendingPick');
+      await removePendingPick();
       alert(
         'Could not start the element picker on this page.',
       );
@@ -626,13 +674,20 @@ class App {
     }
   }
 
-  async saveCurrentSetting() {
+  // Copies the form's current values into the model, applying the
+  // shared selector parsing. Used by every path that persists the
+  // setting (Save button, Edit in Window, element picker).
+  syncCurrentSettingFromForm() {
     this.model.currentSetting.name = this.view.settingNameInput.value;
     this.model.currentSetting.urlPattern = this.view.urlPatternInput.value;
-    this.model.currentSetting.selectors = this.view.selectorsInput.value
-      .split('\n')
-      .filter((s) => s.trim() !== '');
+    this.model.currentSetting.selectors = parseSelectorsInput(
+      this.view.selectorsInput.value,
+    );
     this.model.currentSetting.format = this.view.formatInput.value;
+  }
+
+  async saveCurrentSetting() {
+    this.syncCurrentSettingFromForm();
     try {
       await this.model.saveCurrentSettingToChromeStorage();
     } catch (error) {
@@ -640,12 +695,10 @@ class App {
       alert('Failed to save the setting.');
       return;
     }
-    const option = this.view.settingSelector.options.namedItem(
+    this.view.setOptionText(
       this.model.currentSetting.id,
+      this.model.currentSetting.name,
     );
-    if (option) {
-      option.innerText = this.model.currentSetting.name;
-    }
 
     this.view.showSavedMessage();
   }
@@ -676,6 +729,23 @@ class App {
     }
     debugLog('GetText succeeded');
     return response.content ?? '';
+  }
+
+  // Fallback for the current URL, used when the content script does
+  // not answer (e.g. a tab that was open before an extension update,
+  // so no content script was injected into it). The activeTab
+  // permission makes the active tab's URL available here.
+  async getActiveTabUrl(): Promise<string> {
+    try {
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      return tabs[0]?.url ?? '';
+    } catch (error) {
+      console.error(`Failed to query the active tab: ${error}`);
+      return '';
+    }
   }
 
   async sendMessageToTab<T>(

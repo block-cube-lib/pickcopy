@@ -2,8 +2,14 @@ import { Setting } from './setting.ts';
 import { MessageResponse } from './message.ts';
 import { MessageType } from './message_type.ts';
 import { generateSelector } from './selector.ts';
-import type { PendingPickedSelector } from './storage.ts';
+import {
+  addPendingPickedSelector,
+  removePendingPick,
+} from './storage.ts';
 
+// Every branch responds synchronously, so the listener does not need
+// to return true (which would only be required to keep the message
+// channel open for an asynchronous sendResponse call).
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   try {
     const messageType = message.messageType;
@@ -37,9 +43,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const response = MessageResponse.createError(errorMessage);
     sendResponse(response);
   }
-
-  return true;
 });
+
+// A trailing "@name" at the very end of a selector means "read this
+// attribute" (e.g. 'a@href'). Matching only a trailing identifier
+// keeps '@' characters that legitimately appear inside a selector
+// (e.g. in an attribute value like [data-user="@me"]) from being
+// treated as the attribute separator.
+const ATTRIBUTE_SUFFIX = /@([a-zA-Z_][\w:-]*)$/;
 
 function extractValue(selector: string): string {
   // One bad selector must not break the whole copy: treat it as empty.
@@ -48,15 +59,11 @@ function extractValue(selector: string): string {
       return '';
     }
 
-    // If the selector includes '@', the part after the FIRST '@' is an
-    // attribute name (e.g. 'a@href').
-    const atIndex = selector.indexOf('@');
-    if (atIndex !== -1) {
-      const valueSelector = selector.slice(0, atIndex);
-      const attribute = selector.slice(atIndex + 1);
-      const element = document.querySelector(valueSelector) as
-        | HTMLElement
-        | null;
+    const attributeMatch = selector.match(ATTRIBUTE_SUFFIX);
+    if (attributeMatch) {
+      const valueSelector = selector.slice(0, attributeMatch.index);
+      const attribute = attributeMatch[1];
+      const element = document.querySelector(valueSelector);
       if (element === null || element === undefined) {
         return '';
       }
@@ -67,7 +74,10 @@ function extractValue(selector: string): string {
       return element.getAttribute(attribute) ?? '';
     }
 
-    const element = document.querySelector(selector) as HTMLElement | null;
+    const element = document.querySelector(selector);
+    if (element === null) {
+      return '';
+    }
     if (
       element instanceof HTMLTextAreaElement ||
       element instanceof HTMLInputElement ||
@@ -75,8 +85,12 @@ function extractValue(selector: string): string {
     ) {
       return element.value;
     }
-    return element?.innerText ?? '';
-  } catch {
+    // HTMLElement has innerText; SVG and other elements may not, so
+    // fall back to textContent for them.
+    const innerText = (element as HTMLElement).innerText;
+    return innerText ?? element.textContent ?? '';
+  } catch (error) {
+    console.warn(`Failed to extract value for selector "${selector}":`, error);
     return '';
   }
 }
@@ -115,6 +129,9 @@ function getText(setting: Setting) {
 // iframes or shadow DOM are out of scope.
 
 const PICKER_Z_INDEX = '2147483647';
+// Marker attribute on the picker's own UI (overlay/toast), so its
+// elements can be excluded from hover/click handling.
+const PICKER_UI_ATTRIBUTE = 'data-copy-picker-ui';
 
 type PickerState = {
   settingId: string;
@@ -122,15 +139,14 @@ type PickerState = {
   previousOutline: string;
   previousOutlineOffset: string;
   overlay: HTMLDivElement;
-  onMouseMove: (event: MouseEvent) => void;
-  onClick: (event: MouseEvent) => void;
-  onKeyDown: (event: KeyboardEvent) => void;
+  listeners: { type: string; handler: (event: Event) => void }[];
 };
 
 let pickerState: PickerState | null = null;
 
 function makePickerDiv(): HTMLDivElement {
   const div = document.createElement('div');
+  div.setAttribute(PICKER_UI_ATTRIBUTE, 'true');
   div.style.cssText =
     `position: fixed; z-index: ${PICKER_Z_INDEX}; pointer-events: none;` +
     'font-family: monospace; font-size: 12px; line-height: 1.4;' +
@@ -138,6 +154,14 @@ function makePickerDiv(): HTMLDivElement {
     'padding: 6px 10px; border-radius: 4px; max-width: 80vw;' +
     'word-break: break-all; box-shadow: 0 2px 8px rgba(0,0,0,0.35);';
   return div;
+}
+
+// True when the event target is (or is inside) the picker's own UI.
+function isPickerUiTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return target.closest(`[${PICKER_UI_ATTRIBUTE}]`) !== null;
 }
 
 function clearHighlight(state: PickerState) {
@@ -152,9 +176,9 @@ function stopPickMode() {
   if (!pickerState) {
     return;
   }
-  document.removeEventListener('mousemove', pickerState.onMouseMove, true);
-  document.removeEventListener('click', pickerState.onClick, true);
-  document.removeEventListener('keydown', pickerState.onKeyDown, true);
+  for (const { type, handler } of pickerState.listeners) {
+    document.removeEventListener(type, handler, true);
+  }
   clearHighlight(pickerState);
   pickerState.overlay.remove();
   pickerState = null;
@@ -170,9 +194,38 @@ function showPickToast(text: string) {
   setTimeout(() => toast.remove(), 2500);
 }
 
+// Swallow an event completely so the page never sees it.
+function swallowEvent(event: Event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
+function confirmPick(state: PickerState, target: Element) {
+  const confirmedSettingId = state.settingId;
+  // Clean up first: even if generating or saving the selector throws,
+  // the picker must not stay behind on the page.
+  stopPickMode();
+  void (async () => {
+    try {
+      const selector = generateSelector(target);
+      await addPendingPickedSelector({
+        settingId: confirmedSettingId,
+        selector,
+      });
+      await removePendingPick();
+      showPickToast(`Selector saved: ${selector}`);
+    } catch (error) {
+      console.error(`Failed to save the picked selector: ${error}`);
+      showPickToast('Failed to save the selector.');
+    }
+  })();
+}
+
 function startPickMode(settingId: string) {
+  // A second StartPick replaces the running session instead of being
+  // ignored, so a stale session never lingers.
   if (pickerState) {
-    return;
+    stopPickMode();
   }
 
   const overlay = makePickerDiv();
@@ -187,62 +240,73 @@ function startPickMode(settingId: string) {
     previousOutline: '',
     previousOutlineOffset: '',
     overlay,
-    onMouseMove: (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target || target === overlay) {
-        return;
-      }
-      if (state.highlighted !== target) {
-        clearHighlight(state);
-        state.previousOutline = target.style.outline;
-        state.previousOutlineOffset = target.style.outlineOffset;
-        target.style.outline = '2px solid #2196f3';
-        target.style.outlineOffset = '1px';
-        state.highlighted = target;
-      }
-      try {
-        overlay.textContent = generateSelector(target);
-      } catch {
-        overlay.textContent = '';
-      }
-    },
-    onClick: (event: MouseEvent) => {
-      // The confirming click must not reach the page.
-      event.preventDefault();
-      event.stopPropagation();
-      const target = event.target as HTMLElement | null;
-      if (!target) {
-        return;
-      }
-      const selector = generateSelector(target);
-      const confirmedSettingId = state.settingId;
-      stopPickMode();
-      void (async () => {
-        const data = await chrome.storage.local.get(
-          'pendingPickedSelectors',
-        );
-        const picked = (data.pendingPickedSelectors ??
-          []) as PendingPickedSelector[];
-        picked.push({ settingId: confirmedSettingId, selector });
-        await chrome.storage.local.set({
-          pendingPickedSelectors: picked,
-        });
-        await chrome.storage.local.remove('pendingPick');
-        showPickToast(`Selector saved: ${selector}`);
-      })();
-    },
-    onKeyDown: (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        stopPickMode();
-        void chrome.storage.local.remove('pendingPick');
-      }
-    },
+    listeners: [],
   };
 
+  const onMouseMove = (event: Event) => {
+    const mouseEvent = event as MouseEvent;
+    if (!(mouseEvent.target instanceof Element)) {
+      return;
+    }
+    if (isPickerUiTarget(mouseEvent.target)) {
+      return;
+    }
+    const target = mouseEvent.target as HTMLElement;
+    if (state.highlighted !== target) {
+      clearHighlight(state);
+      state.previousOutline = target.style.outline;
+      state.previousOutlineOffset = target.style.outlineOffset;
+      target.style.outline = '2px solid #2196f3';
+      target.style.outlineOffset = '1px';
+      state.highlighted = target;
+    }
+    try {
+      overlay.textContent = generateSelector(target);
+    } catch {
+      overlay.textContent = '';
+    }
+  };
+
+  // mousedown/mouseup and their pointer equivalents are swallowed too,
+  // so picking does not focus fields, start text selection or trigger
+  // drag behaviour on the page.
+  const onPress = (event: Event) => {
+    swallowEvent(event);
+  };
+
+  const onClick = (event: Event) => {
+    swallowEvent(event);
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    if (isPickerUiTarget(event.target)) {
+      return;
+    }
+    confirmPick(state, event.target);
+  };
+
+  const onKeyDown = (event: Event) => {
+    const keyEvent = event as KeyboardEvent;
+    if (keyEvent.key === 'Escape') {
+      keyEvent.preventDefault();
+      keyEvent.stopImmediatePropagation();
+      stopPickMode();
+      void removePendingPick();
+    }
+  };
+
+  state.listeners = [
+    { type: 'mousemove', handler: onMouseMove },
+    { type: 'mousedown', handler: onPress },
+    { type: 'mouseup', handler: onPress },
+    { type: 'pointerdown', handler: onPress },
+    { type: 'pointerup', handler: onPress },
+    { type: 'click', handler: onClick },
+    { type: 'keydown', handler: onKeyDown },
+  ];
+
   pickerState = state;
-  document.addEventListener('mousemove', state.onMouseMove, true);
-  document.addEventListener('click', state.onClick, true);
-  document.addEventListener('keydown', state.onKeyDown, true);
+  for (const { type, handler } of state.listeners) {
+    document.addEventListener(type, handler, true);
+  }
 }

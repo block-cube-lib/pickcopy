@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { Setting } from './setting.ts';
+import { parseSelectorsInput, Setting } from './setting.ts';
+
+describe('parseSelectorsInput', () => {
+  it('splits one selector per line', () => {
+    expect(parseSelectorsInput('h1\na@href')).toEqual(['h1', 'a@href']);
+  });
+
+  it('drops blank and whitespace-only lines', () => {
+    expect(parseSelectorsInput('h1\n\n   \n\t\np\n')).toEqual(['h1', 'p']);
+  });
+
+  it('returns [] for empty input', () => {
+    expect(parseSelectorsInput('')).toEqual([]);
+  });
+});
 
 describe('Setting.createNew', () => {
   it('generates an ID and empty fields', () => {

@@ -1,10 +1,21 @@
-import { Setting } from './setting.ts';
+import { parseSelectorsInput, Setting } from './setting.ts';
+import { parseImportedSettings } from './setting_import.ts';
 import { loadStorageData, saveStorageData } from './storage.ts';
 
 type StorageCache = {
   settings: Setting[];
   lastSelectedSettingIdDict: { [key: string]: string };
 };
+
+// Loads the settings data in normalized form: settings and the
+// last-selected dict are always present, even on a fresh install.
+async function loadCache(): Promise<StorageCache> {
+  const data = await loadStorageData();
+  return {
+    settings: data.settings as unknown as Setting[],
+    lastSelectedSettingIdDict: data.lastSelectedSettingIdDict,
+  };
+}
 
 class SettingsPage {
   private settingId: string | null = null;
@@ -105,7 +116,7 @@ class SettingsPage {
   // === Edit Setting View Implementation ===
 
   private async loadSetting() {
-    const cache = await loadStorageData() as StorageCache;
+    const cache = await loadCache();
     const savedSettings = cache.settings ?? [];
     this.setting = savedSettings.find((s) => s.id === this.settingId) ?? null;
   }
@@ -127,7 +138,7 @@ class SettingsPage {
   private async saveSetting() {
     if (!this.setting || !this.settingId) return;
 
-    const cache = await loadStorageData() as StorageCache;
+    const cache = await loadCache();
     const settings = cache.settings ?? [];
     const settingIndex = settings.findIndex((s) => s.id === this.settingId);
 
@@ -136,7 +147,7 @@ class SettingsPage {
         this.settingId,
         this.nameInput.value,
         this.urlPatternInput.value,
-        this.selectorsInput.value.split('\n').filter((s) => s.trim() !== ''),
+        parseSelectorsInput(this.selectorsInput.value),
         this.formatInput.value,
       );
       settings[settingIndex] = updatedSetting;
@@ -159,7 +170,7 @@ class SettingsPage {
     ) {
       return;
     }
-    const cache = await loadStorageData() as StorageCache;
+    const cache = await loadCache();
     cache.settings = (cache.settings ?? []).filter((s) =>
       s.id !== this.settingId
     );
@@ -192,7 +203,7 @@ class SettingsPage {
   // === All Settings View Implementation ===
 
   private async loadAllSettingsList() {
-    const cache = await loadStorageData() as StorageCache;
+    const cache = await loadCache();
     const settings = cache.settings ?? [];
     this.settingsList.innerHTML = '';
 
@@ -235,20 +246,24 @@ class SettingsPage {
       deleteBtn.innerText = 'Delete';
       deleteBtn.addEventListener('click', async () => {
         if (confirm(`Are you sure you want to delete "${setting.name}"?`)) {
-          const updatedSettings = settings.filter((s) => s.id !== setting.id);
-          cache.settings = updatedSettings;
+          // Reload fresh data instead of writing back the snapshot
+          // captured when the list was rendered.
+          const freshCache = await loadCache();
+          freshCache.settings = freshCache.settings.filter((s) =>
+            s.id !== setting.id
+          );
 
           // also clean up last selected setting if it was this one
-          if (cache.lastSelectedSettingIdDict) {
-            for (const domain of Object.keys(cache.lastSelectedSettingIdDict)) {
-              if (cache.lastSelectedSettingIdDict[domain] === setting.id) {
-                delete cache.lastSelectedSettingIdDict[domain];
-              }
+          for (
+            const domain of Object.keys(freshCache.lastSelectedSettingIdDict)
+          ) {
+            if (freshCache.lastSelectedSettingIdDict[domain] === setting.id) {
+              delete freshCache.lastSelectedSettingIdDict[domain];
             }
           }
 
           try {
-            await saveStorageData(cache);
+            await saveStorageData(freshCache);
           } catch (e) {
             alert(`Failed to delete the setting: ${e}`);
             return;
@@ -267,9 +282,15 @@ class SettingsPage {
   }
 
   private async exportSettings() {
-    const cache = await loadStorageData();
+    const cache = await loadCache();
+    // Export only the settings data itself: internal keys (migration
+    // flag, picker pending state) are not part of a settings backup.
+    const exportData = {
+      settings: cache.settings,
+      lastSelectedSettingIdDict: cache.lastSelectedSettingIdDict,
+    };
     const dataStr = 'data:text/json;charset=utf-8,' +
-      encodeURIComponent(JSON.stringify(cache, null, 2));
+      encodeURIComponent(JSON.stringify(exportData, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute('href', dataStr);
     downloadAnchorNode.setAttribute('download', 'magic_copy_settings.json');
@@ -296,6 +317,9 @@ class SettingsPage {
       } else if (modeInput !== null) {
         alert('Invalid mode. Import cancelled.');
       }
+    };
+    reader.onerror = () => {
+      alert('Failed to read the selected file.');
     };
     reader.readAsText(file);
   }
@@ -324,35 +348,17 @@ class SettingsPage {
     mode: 'overwrite' | 'newId' | 'ignore',
   ) {
     try {
-      const importedData = JSON.parse(json);
-      let importedSettings: Setting[] = [];
-
-      if (Array.isArray(importedData)) {
-        importedSettings = importedData;
-      } else if (importedData && Array.isArray(importedData.settings)) {
-        importedSettings = importedData.settings;
-      } else if (importedData && typeof importedData === 'object') {
-        // Old format: { [id]: { pattern/urlPattern, name, selectors, format } }
-        for (const [id, value] of Object.entries(importedData)) {
-          if (value && typeof value === 'object') {
-            const v = value as any;
-            importedSettings.push({
-              id: id,
-              name: v.name || '',
-              urlPattern: v.urlPattern || v.pattern || '',
-              selectors: v.selectors || [],
-              format: v.format || '',
-            } as Setting);
-          }
-        }
-      }
+      const importedData: unknown = JSON.parse(json);
+      // All entries are validated and normalized (invalid entries are
+      // dropped, preset-ID collisions are re-assigned new UUIDs).
+      const importedSettings = parseImportedSettings(importedData);
 
       if (importedSettings.length === 0) {
         alert('No settings found in the imported data.');
         return;
       }
 
-      const cache = await loadStorageData() as StorageCache;
+      const cache = await loadCache();
       const currentSettings = cache.settings ?? [];
       const currentSettingsMap = new Map(currentSettings.map((s) => [s.id, s]));
 

@@ -44,4 +44,14 @@ class Setting {
   }
 }
 
-export { Setting };
+// Shared parsing for the multi-line selectors textarea: one selector
+// per line, blank (or whitespace-only) lines are dropped. The popup's
+// live input handler, the popup's save path and the settings page all
+// use this, so the selectors the preview works with while editing are
+// exactly the ones that end up saved (and {n} placeholders in the
+// format never shift between preview and a saved setting).
+function parseSelectorsInput(text: string): string[] {
+  return text.split('\n').filter((line) => line.trim() !== '');
+}
+
+export { parseSelectorsInput, Setting };

@@ -8,8 +8,11 @@
 //   if no unique selector can be built, the full ancestor path is
 //   returned as a best effort.
 
-// Escape a value for use as a CSS identifier (id or class name).
-function escapeIdent(value: string): string {
+// Fallback identifier escaping, used only when CSS.escape is not
+// available. The standard CSS.escape is preferred; this fallback exists
+// because some environments do not provide it (notably jsdom, which the
+// unit tests run in, has no CSS.escape).
+function escapeIdentFallback(value: string): string {
   let result = '';
   for (let i = 0; i < value.length; i++) {
     const ch = value[i];
@@ -26,6 +29,14 @@ function escapeIdent(value: string): string {
     }
   }
   return result;
+}
+
+// Escape a value for use as a CSS identifier (id or class name).
+function escapeIdent(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value);
+  }
+  return escapeIdentFallback(value);
 }
 
 function classNamesOf(element: Element): string[] {

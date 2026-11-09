@@ -38,6 +38,23 @@ describe('generateSelector', () => {
     expect(document.querySelector(selector)).toBe(element);
   });
 
+  it('escapes ids and classes that need escaping', () => {
+    // Leading digit in the id and a ':' in the class both require
+    // escaping (via CSS.escape, or the built-in fallback when the
+    // environment lacks CSS.escape, as jsdom does).
+    document.body.innerHTML =
+      '<div><p id="1st">x</p><span class="a:b">y</span><span>z</span></div>';
+    const byId = document.getElementById('1st')!;
+    const idSelector = generateSelector(byId);
+    expect(document.querySelectorAll(idSelector)).toHaveLength(1);
+    expect(document.querySelector(idSelector)).toBe(byId);
+
+    const byClass = document.querySelector('.a\\:b')!;
+    const classSelector = generateSelector(byClass);
+    expect(document.querySelectorAll(classSelector)).toHaveLength(1);
+    expect(document.querySelector(classSelector)).toBe(byClass);
+  });
+
   it('returns a full path for deeply nested elements', () => {
     document.body.innerHTML =
       '<section><div><span><a href="#">x</a></span></div></section>' +
