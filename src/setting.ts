@@ -39,7 +39,8 @@ class Setting {
     const regexPattern = this.urlPattern.split('*').map(escapeRegExp).join(
       '.*',
     );
-    return new RegExp(regexPattern).test(url);
+    // Anchor the pattern so it must match the whole URL, not a substring.
+    return new RegExp(`^${regexPattern}$`).test(url);
   }
 }
 

@@ -1,4 +1,5 @@
 import { Setting } from './setting.ts';
+import { loadStorageData, saveStorageData } from './storage.ts';
 
 type StorageCache = {
   settings: Setting[];
@@ -104,15 +105,17 @@ class SettingsPage {
   // === Edit Setting View Implementation ===
 
   private async loadSetting() {
-    const cache: StorageCache = await chrome.storage.sync.get(null);
+    const cache = await loadStorageData() as StorageCache;
     const savedSettings = cache.settings ?? [];
     this.setting = savedSettings.find((s) => s.id === this.settingId) ?? null;
   }
 
   private populateForm() {
     if (!this.setting) {
-      document.body.innerHTML =
-        `<h1>Error: Setting with ID "${this.settingId}" not found.</h1>`;
+      const error = document.createElement('h1');
+      error.textContent =
+        `Error: Setting with ID "${this.settingId}" not found.`;
+      document.body.replaceChildren(error);
       return;
     }
     this.nameInput.value = this.setting.name;
@@ -124,7 +127,7 @@ class SettingsPage {
   private async saveSetting() {
     if (!this.setting || !this.settingId) return;
 
-    const cache: StorageCache = await chrome.storage.sync.get(null);
+    const cache = await loadStorageData() as StorageCache;
     const settings = cache.settings ?? [];
     const settingIndex = settings.findIndex((s) => s.id === this.settingId);
 
@@ -138,7 +141,12 @@ class SettingsPage {
       );
       settings[settingIndex] = updatedSetting;
       cache.settings = settings;
-      await chrome.storage.sync.set(cache);
+      try {
+        await saveStorageData(cache);
+      } catch (e) {
+        alert(`Failed to save the setting: ${e}`);
+        return;
+      }
       this.showSavedMessage();
     }
   }
@@ -151,7 +159,7 @@ class SettingsPage {
     ) {
       return;
     }
-    const cache: StorageCache = await chrome.storage.sync.get(null);
+    const cache = await loadStorageData() as StorageCache;
     cache.settings = (cache.settings ?? []).filter((s) =>
       s.id !== this.settingId
     );
@@ -165,7 +173,12 @@ class SettingsPage {
       }
     }
 
-    await chrome.storage.sync.set(cache);
+    try {
+      await saveStorageData(cache);
+    } catch (e) {
+      alert(`Failed to delete the setting: ${e}`);
+      return;
+    }
     window.close();
   }
 
@@ -179,13 +192,16 @@ class SettingsPage {
   // === All Settings View Implementation ===
 
   private async loadAllSettingsList() {
-    const cache: StorageCache = await chrome.storage.sync.get(null);
+    const cache = await loadStorageData() as StorageCache;
     const settings = cache.settings ?? [];
     this.settingsList.innerHTML = '';
 
     if (settings.length === 0) {
-      this.settingsList.innerHTML =
-        '<div style="color: #666; font-style: italic; margin-bottom: 15px;">No custom settings found.</div>';
+      const empty = document.createElement('div');
+      empty.style.cssText =
+        'color: #666; font-style: italic; margin-bottom: 15px;';
+      empty.textContent = 'No custom settings found.';
+      this.settingsList.appendChild(empty);
       return;
     }
 
@@ -197,21 +213,22 @@ class SettingsPage {
       title.className = 'setting-item-title';
       title.innerText = setting.name || '(Unnamed)';
 
-      const pattern = document.createElement('div');
-      pattern.className = 'setting-item-detail';
-      pattern.innerHTML = `<strong>Pattern:</strong> ${
-        setting.urlPattern || '*'
-      }`;
+      const makeDetail = (label: string, value: string) => {
+        const div = document.createElement('div');
+        div.className = 'setting-item-detail';
+        const strong = document.createElement('strong');
+        strong.textContent = `${label}:`;
+        div.appendChild(strong);
+        div.appendChild(document.createTextNode(` ${value}`));
+        return div;
+      };
 
-      const selectors = document.createElement('div');
-      selectors.className = 'setting-item-detail';
-      selectors.innerHTML = `<strong>Selectors:</strong> ${
-        setting.selectors.join(', ') || '(None)'
-      }`;
-
-      const format = document.createElement('div');
-      format.className = 'setting-item-detail';
-      format.innerHTML = `<strong>Format:</strong> ${setting.format}`;
+      const pattern = makeDetail('Pattern', setting.urlPattern || '*');
+      const selectors = makeDetail(
+        'Selectors',
+        setting.selectors.join(', ') || '(None)',
+      );
+      const format = makeDetail('Format', setting.format);
 
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'delete-btn';
@@ -230,7 +247,12 @@ class SettingsPage {
             }
           }
 
-          await chrome.storage.sync.set(cache);
+          try {
+            await saveStorageData(cache);
+          } catch (e) {
+            alert(`Failed to delete the setting: ${e}`);
+            return;
+          }
           this.loadAllSettingsList();
         }
       });
@@ -245,7 +267,7 @@ class SettingsPage {
   }
 
   private async exportSettings() {
-    const cache = await chrome.storage.sync.get(null);
+    const cache = await loadStorageData();
     const dataStr = 'data:text/json;charset=utf-8,' +
       encodeURIComponent(JSON.stringify(cache, null, 2));
     const downloadAnchorNode = document.createElement('a');
@@ -320,7 +342,7 @@ class SettingsPage {
               urlPattern: v.urlPattern || v.pattern || '',
               selectors: v.selectors || [],
               format: v.format || '',
-            });
+            } as Setting);
           }
         }
       }
@@ -330,7 +352,7 @@ class SettingsPage {
         return;
       }
 
-      const cache: StorageCache = await chrome.storage.sync.get(null);
+      const cache = await loadStorageData() as StorageCache;
       const currentSettings = cache.settings ?? [];
       const currentSettingsMap = new Map(currentSettings.map((s) => [s.id, s]));
 
@@ -344,7 +366,7 @@ class SettingsPage {
             currentSettingsMap.set(newId, {
               ...imported,
               id: newId,
-            });
+            } as Setting);
           }
           // if 'ignore', do nothing
         } else {
@@ -353,11 +375,11 @@ class SettingsPage {
       }
 
       cache.settings = Array.from(currentSettingsMap.values());
-      await chrome.storage.sync.set(cache);
+      await saveStorageData(cache);
       alert('Settings imported successfully!');
       this.loadAllSettingsList();
     } catch (e) {
-      alert(`Failed to parse settings JSON: ${e}`);
+      alert(`Failed to import settings: ${e}`);
     }
   }
 }

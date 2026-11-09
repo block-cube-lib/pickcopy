@@ -5,7 +5,7 @@ import {
   MessageRequest,
   MessageResponse,
 } from './message.ts';
-//import { storage } from "npm:@extend-chrome/storage";
+import { loadStorageData, saveStorageData } from './storage.ts';
 
 const DefaultSetting = new Setting(
   'defaultSetting',
@@ -31,9 +31,13 @@ const MarkdownSetting = new Setting(
 
 const PresetSettings = [DefaultSetting, TitleAndURLSetting, MarkdownSetting];
 
-const isDebug = true;
-const debugLog = (message: string) => {
-  if (isDebug) console.log(message);
+const isDebug = false;
+const debugLog = (_message: string) => {
+  // Intentionally silent: setting contents must not be written to the
+  // console. Kept as a no-op so call sites do not need to change.
+  if (isDebug) {
+    // no-op
+  }
 };
 
 const isPresetSetting = (id: string): boolean =>
@@ -136,7 +140,7 @@ class View {
   }
 }
 
-type Dictionary<KT, VT> = { [key: KT]: VT };
+type Dictionary<KT extends string, VT> = Record<KT, VT>;
 
 class StorageCache {
   settings: Setting[];
@@ -168,7 +172,7 @@ class Model {
     this.storageCache = await this.loadStorageCacheFromChromeStorage();
     if (this.storageCache === undefined) {
       this.storageCache = new StorageCache([], {});
-      await chrome.storage.sync.set(this.storageCache);
+      await saveStorageData(this.storageCache);
     }
     // Convert plain objects loaded from storage into Setting class instances.
     const savedSettings = this.storageCache.settings ?? [];
@@ -212,12 +216,8 @@ class Model {
   }
 
   async loadStorageCacheFromChromeStorage() {
-    const storageCache: StorageCache = await chrome.storage.sync.get(null);
-    debugLog(
-      `load storageCahce from chrome storage: ${
-        JSON.stringify(storageCache, null, 2)
-      }`,
-    );
+    const storageCache = await loadStorageData() as StorageCache;
+    debugLog('load storageCache from chrome storage');
     return storageCache;
   }
 
@@ -274,7 +274,11 @@ class Model {
       storageCache.lastSelectedSettingIdDict = {};
     }
     storageCache.lastSelectedSettingIdDict[domain] = settingId;
-    await chrome.storage.sync.set(storageCache);
+    try {
+      await saveStorageData(storageCache);
+    } catch (error) {
+      console.error(`Failed to save last selected setting: ${error}`);
+    }
   }
 
   async saveCurrentSettingToChromeStorage() {
@@ -302,7 +306,7 @@ class Model {
       );
     }
 
-    await chrome.storage.sync.set(storageCache);
+    await saveStorageData(storageCache);
   }
 }
 
@@ -478,23 +482,45 @@ class App {
 
   async copyToClipboard() {
     const text = await this.getText();
+    if (text === null) {
+      // No response from the content script (e.g. chrome:// pages,
+      // the Web Store or PDF viewer): do not copy an empty string.
+      alert(
+        'Could not read this page. Copying is not available on this page.',
+      );
+      return;
+    }
     // Also reflect in the preview.
     this.view.preview.value = text;
-    navigator.clipboard.writeText(text).then(() => {
+    try {
+      await navigator.clipboard.writeText(text);
       this.view.showCopiedMessage();
-    });
+    } catch (error) {
+      console.error(`Failed to write to clipboard: ${error}`);
+      alert('Failed to copy to the clipboard.');
+    }
   }
 
   async saveCurrentSetting() {
     this.model.currentSetting.name = this.view.settingNameInput.value;
     this.model.currentSetting.urlPattern = this.view.urlPatternInput.value;
-    this.model.currentSetting.selectors = this.view.selectorsInput.value.split(
-      '\n',
-    );
+    this.model.currentSetting.selectors = this.view.selectorsInput.value
+      .split('\n')
+      .filter((s) => s.trim() !== '');
     this.model.currentSetting.format = this.view.formatInput.value;
-    await this.model.saveCurrentSettingToChromeStorage();
-    this.view.settingSelector.options.namedItem(this.model.currentSetting.id)!
-      .innerText = this.model.currentSetting.name;
+    try {
+      await this.model.saveCurrentSettingToChromeStorage();
+    } catch (error) {
+      console.error(`Failed to save setting: ${error}`);
+      alert('Failed to save the setting.');
+      return;
+    }
+    const option = this.view.settingSelector.options.namedItem(
+      this.model.currentSetting.id,
+    );
+    if (option) {
+      option.innerText = this.model.currentSetting.name;
+    }
 
     this.view.showSavedMessage();
   }
@@ -507,7 +533,7 @@ class App {
   }
 
   async updatePreview() {
-    const text = await this.getText();
+    const text = await this.getText() ?? '';
     this.view.preview.value = text;
     debugLog(`Preview updated: ${text}`);
     requestAnimationFrame(() => {
@@ -516,11 +542,15 @@ class App {
     });
   }
 
-  async getText() {
+  async getText(): Promise<string | null> {
     const request = new GetTextRequest(this.model.currentSetting);
     const response = await this.sendMessageToTab<string>(request);
-    debugLog(`GetText: response = ${JSON.stringify(response, null, 2)}`);
-    return response?.content ?? '';
+    if (!response || !response.isSuccess) {
+      // No response, or the content script reported an error.
+      return null;
+    }
+    debugLog('GetText succeeded');
+    return response.content ?? '';
   }
 
   async sendMessageToTab<T>(
