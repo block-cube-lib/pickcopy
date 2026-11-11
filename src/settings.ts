@@ -283,8 +283,8 @@ class SettingsPage {
 
   private async exportSettings() {
     const cache = await loadCache();
-    // Export only the settings data itself: internal keys (migration
-    // flag, picker pending state) are not part of a settings backup.
+    // Export only the settings data itself: internal keys (such as the
+    // picker's pending state) are not part of a settings backup.
     const exportData = {
       settings: cache.settings,
       lastSelectedSettingIdDict: cache.lastSelectedSettingIdDict,
@@ -293,7 +293,7 @@ class SettingsPage {
       encodeURIComponent(JSON.stringify(exportData, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute('href', dataStr);
-    downloadAnchorNode.setAttribute('download', 'magic_copy_settings.json');
+    downloadAnchorNode.setAttribute('download', 'pickcopy_settings.json');
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();

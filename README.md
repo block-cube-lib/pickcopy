@@ -1,4 +1,4 @@
-# MAGIC COPY
+# PickCopy
 
 ワンクリックでサイトの情報をコピーするChrome拡張機能。
 

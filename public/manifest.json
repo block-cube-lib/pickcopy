@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Scriptable Copy",
-  "version": "1.0",
-  "description": "Copy specified content from websites to clipboard with a single click",
+  "name": "PickCopy",
+  "version": "1.0.0",
+  "description": "Pick elements on a page and copy them in your own format — per-site rules, one click",
   "permissions": [
     "activeTab",
     "clipboardWrite",

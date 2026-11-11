@@ -1,20 +1,19 @@
 // Storage access for settings.
 //
-// Settings used to live in chrome.storage.sync, whose per-item quota
-// (8 KB) is easy to exceed once several settings are saved. They now live
-// in chrome.storage.local. On first load, if local storage has no data
-// but sync still holds data from an older version, that data is migrated
-// to local storage once (sync data is left untouched).
+// Settings live in chrome.storage.local: chrome.storage.sync's per-item
+// quota (8 KB) is easy to exceed once several settings are saved, and
+// portability between machines/browsers is covered by the settings
+// export/import feature instead. There is deliberately no migration
+// from the old sync-based version: the only user of that version was
+// the author, so the store release starts fresh on local storage
+// (decision 2026-11-11).
 //
-// Only the keys owned by this module (settings,
-// lastSelectedSettingIdDict, migratedFromSync) are ever read or written
-// here. Reading everything with get(null) and writing the whole object
-// back used to race with, and could clobber, unrelated keys kept in the
-// same storage area (such as the element picker's pending state), so all
-// access is scoped to explicit key lists. A `migratedFromSync` flag in
-// local storage records that the one-time sync -> local migration has
-// been decided, so deleting every setting does not resurrect the old
-// sync data on the next start.
+// Only the keys owned by this module (settings and
+// lastSelectedSettingIdDict) are ever read or written here. Reading
+// everything with get(null) and writing the whole object back used to
+// race with, and could clobber, unrelated keys kept in the same storage
+// area (such as the element picker's pending state), so all access is
+// scoped to explicit key lists.
 
 // A setting as stored (plain object form of the Setting class).
 type StoredSetting = {
@@ -32,15 +31,10 @@ type StoredSetting = {
 type StoredData = {
   settings: StoredSetting[];
   lastSelectedSettingIdDict: { [key: string]: string };
-  migratedFromSync: boolean;
 };
 
 // Keys owned by this module, in one place.
-const DATA_KEYS = [
-  'settings',
-  'lastSelectedSettingIdDict',
-  'migratedFromSync',
-] as const;
+const DATA_KEYS = ['settings', 'lastSelectedSettingIdDict'] as const;
 
 const isRecord = (value: unknown): value is { [key: string]: unknown } =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,49 +60,13 @@ function normalizeStoredData(raw: unknown): StoredData {
   return {
     settings,
     lastSelectedSettingIdDict: dict,
-    migratedFromSync: record.migratedFromSync === true,
   };
 }
 
-const hasStoredData = (data: StoredData): boolean =>
-  data.settings.length > 0 ||
-  Object.keys(data.lastSelectedSettingIdDict).length > 0;
-
 async function loadStorageData(): Promise<StoredData> {
-  const localData = normalizeStoredData(
+  return normalizeStoredData(
     await chrome.storage.local.get([...DATA_KEYS]),
   );
-  if (localData.migratedFromSync) {
-    return localData;
-  }
-
-  // Migration has not been decided yet. Do it at most once: whatever the
-  // outcome, persist the flag (without touching the data keys unless
-  // there is something to migrate) so the sync data is never re-imported.
-  let syncData: StoredData | null = null;
-  try {
-    syncData = normalizeStoredData(
-      await chrome.storage.sync.get(['settings', 'lastSelectedSettingIdDict']),
-    );
-  } catch (error) {
-    // Sync may be unavailable (e.g. profile restrictions). Treat it as
-    // empty rather than breaking every storage load.
-    console.warn(`Failed to read chrome.storage.sync for migration: ${error}`);
-    syncData = null;
-  }
-
-  if (!hasStoredData(localData) && syncData && hasStoredData(syncData)) {
-    const migrated: StoredData = { ...syncData, migratedFromSync: true };
-    await chrome.storage.local.set({
-      settings: migrated.settings,
-      lastSelectedSettingIdDict: migrated.lastSelectedSettingIdDict,
-      migratedFromSync: true,
-    });
-    return migrated;
-  }
-
-  await chrome.storage.local.set({ migratedFromSync: true });
-  return { ...localData, migratedFromSync: true };
 }
 
 // Writes only the data keys that are actually present in `data`; other
@@ -129,9 +87,6 @@ async function saveStorageData(data: object): Promise<void> {
       )
       ? record.lastSelectedSettingIdDict
       : {};
-  }
-  if ('migratedFromSync' in record) {
-    toWrite.migratedFromSync = record.migratedFromSync === true;
   }
   if (Object.keys(toWrite).length > 0) {
     await chrome.storage.local.set(toWrite);

@@ -38,9 +38,7 @@ function makeArea(store: { [key: string]: unknown }) {
 }
 
 let localStore: { [key: string]: unknown };
-let syncStore: { [key: string]: unknown };
 let localArea: ReturnType<typeof makeArea>;
-let syncArea: ReturnType<typeof makeArea>;
 
 const aSetting = {
   id: 'abc',
@@ -52,11 +50,12 @@ const aSetting = {
 
 beforeEach(() => {
   localStore = {};
-  syncStore = {};
   localArea = makeArea(localStore);
-  syncArea = makeArea(syncStore);
+  // No `sync` area is stubbed on purpose: the release build must never
+  // touch chrome.storage.sync (there is no migration), so any access
+  // would throw here.
   vi.stubGlobal('chrome', {
-    storage: { local: localArea, sync: syncArea },
+    storage: { local: localArea },
   });
 });
 
@@ -70,37 +69,26 @@ describe('loadStorageData normalization', () => {
     expect(data.settings).toHaveLength(1);
   });
 
-  it('migrates sync data to local once and sets the flag', async () => {
-    syncStore.settings = [aSetting];
-    syncStore.lastSelectedSettingIdDict = { 'example.com': 'abc' };
+  it('returns local data as stored', async () => {
+    localStore.settings = [aSetting];
+    localStore.lastSelectedSettingIdDict = { 'example.com': 'abc' };
 
     const data = await loadStorageData();
     expect(data.settings).toEqual([aSetting]);
     expect(data.lastSelectedSettingIdDict).toEqual({
       'example.com': 'abc',
     });
-    expect(localStore.settings).toEqual([aSetting]);
-    expect(localStore.migratedFromSync).toBe(true);
+    // Loading must not write anything back.
+    expect(localArea.set).not.toHaveBeenCalled();
   });
 
-  it('does not resurrect sync data after all settings are deleted', async () => {
-    syncStore.settings = [aSetting];
-    localStore.settings = [];
-    localStore.lastSelectedSettingIdDict = {};
-    localStore.migratedFromSync = true;
+  it('coerces malformed stored values to the empty shapes', async () => {
+    localStore.settings = 'not-an-array';
+    localStore.lastSelectedSettingIdDict = { ok: 'abc', bad: 42 };
 
     const data = await loadStorageData();
     expect(data.settings).toEqual([]);
-    expect(syncArea.get).not.toHaveBeenCalled();
-  });
-
-  it('tolerates chrome.storage.sync failing during migration', async () => {
-    syncArea.get = vi.fn(async () => {
-      throw new Error('sync unavailable');
-    });
-    const data = await loadStorageData();
-    expect(data.settings).toEqual([]);
-    expect(data.lastSelectedSettingIdDict).toEqual({});
+    expect(data.lastSelectedSettingIdDict).toEqual({ ok: 'abc' });
   });
 });
 
