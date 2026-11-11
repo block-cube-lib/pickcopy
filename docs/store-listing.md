@@ -84,9 +84,8 @@ you can try it immediately.
     user's own selectors, only when the user clicks Copy or uses the
     element picker.
 - Remote code: None. All JavaScript is bundled in the package.
-- Privacy policy URL: (to be hosted — candidate:
-  https://block-lab.dev/pickcopy/privacy/ — needs the staging-first flow
-  and the owner's OK before deployment.)
+- Privacy policy URL: https://github.com/block-cube-lib/pickcopy/blob/main/docs/privacy-policy.md
+  (owner decision 2026-11-11: host it as a page in the GitHub repository)
 
 ## Assets status
 

@@ -40,7 +40,7 @@ sent anywhere.
 
 Questions about this policy: please use the support contact listed on the
 Chrome Web Store page, or open an issue at
-https://github.com/block-cube-lib/scriptable_copy
+https://github.com/block-cube-lib/pickcopy
 
 ---
 
@@ -84,5 +84,5 @@ PickCopy は、個人データ・利用データを一切収集・送信・販�
 ## お問い合わせ
 
 本ポリシーに関する質問は、Chromeウェブストアの掲載ページに記載の
-サポート連絡先、または https://github.com/block-cube-lib/scriptable_copy
+サポート連絡先、または https://github.com/block-cube-lib/pickcopy
 の Issue へお願いします。
